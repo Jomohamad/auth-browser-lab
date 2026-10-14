@@ -7,9 +7,9 @@
   "auth": {
     "provider": "custom",
     "username": "security-test@example.com",
-    "username_selector": "input[name=\"email\"]",
-    "password_selector": "input[name=\"password\"]",
-    "submit_selector": "button[type=\"submit\"]",
+    "username_selector": "input#txtname",
+    "password_selector": "input#txtPass",
+    "submit_selector": "input#Button1",
     "success_url_patterns": [
       "/dashboard",
       "/home",

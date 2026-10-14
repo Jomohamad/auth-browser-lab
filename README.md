@@ -1,32 +1,45 @@
-# Authentication Audit Tool
+# Auth Audit Tool
 
-A safe, configurable Python tool for authorized authentication testing against your own Next.js/React applications using Playwright. Designed with strict security controls for responsible testing.
+A safe, configurable Python tool for **authorized authentication testing** against your own web applications using Playwright. Designed with strict security controls for responsible testing.
+
+---
 
 ## ⚠️ Important Security Notice
 
-**This tool is for AUTHORIZED TESTING ONLY.** It is designed to test authentication on applications you own and control. 
+**This tool is for AUTHORIZED TESTING ONLY.** It is designed to test authentication on applications you own and control.
 
-- Never use against systems you don't own
-- Never attempt to bypass security controls (CAPTCHA, MFA, rate limits, WAF)
-- Never test credentials belonging to other users
-- Always have written authorization before testing
+- ✅ Only use against systems you own or have explicit written authorization for
+- ✅ Use dedicated test accounts - never production user accounts
+- ❌ Never use against systems you don't own
+- ❌ Never attempt to bypass security controls (CAPTCHA, MFA, rate limits, WAF)
+- ❌ Never test credentials belonging to other users
+- ❌ Never use for brute-force or credential stuffing attacks
+
+---
 
 ## Features
 
-- **Safe by Default**: Production mode allows only ONE password per run
-- **Hostname Allowlist**: Validates target against explicit allowed hosts
-- **HTTPS Enforcement**: Requires HTTPS except for localhost
-- **Security Challenge Detection**: Stops immediately on CAPTCHA, rate limits, lockouts
-- **No Credential Logging**: Passwords, tokens, cookies never logged or stored
-- **Sanitized Reports**: CSV output with only diagnostic information
-- **Configurable Selectors**: Works with Custom, Auth.js, Clerk, Supabase, NextAuth
-- **Staging Mode**: Optional multi-password testing with strict limits (explicit opt-in required)
+| Feature | Description |
+|---------|-------------|
+| **Safe by Default** | Production mode allows only ONE password per run |
+| **Hostname Allowlist** | Validates target against explicit allowed hosts |
+| **HTTPS Enforcement** | Requires HTTPS except for localhost |
+| **Security Challenge Detection** | Stops immediately on CAPTCHA, rate limits, lockouts, MFA |
+| **No Credential Logging** | Passwords, tokens, cookies never logged or stored |
+| **Sanitized Reports** | CSV output with only diagnostic information |
+| **Configurable Selectors** | Works with Custom, Auth.js, Clerk, Supabase, NextAuth |
+| **Staging Mode** | Optional multi-password testing with strict limits (explicit opt-in required) |
+| **Redirect Protection** | Blocks navigation to non-allowlisted hosts |
+
+---
 
 ## Requirements
 
 - **Python**: 3.10 or higher
 - **OS**: Windows 11 (PowerShell), macOS, or Linux
 - **Playwright Chromium**: Installed via Playwright CLI
+
+---
 
 ## Quick Start (Windows 11 / PowerShell)
 
@@ -77,7 +90,7 @@ rename password.txt.example password.txt
 notepad password.txt
 ```
 
-**Important**: For production mode, put EXACTLY ONE password in the file (one line, no extra blank lines).
+**Important**: For production mode, put **EXACTLY ONE** password in the file (one line, no extra blank lines).
 
 ### 7. Run Test
 
@@ -95,6 +108,8 @@ python tester.py --config config.json
 - Check console output for result classification
 - View CSV report in `reports/auth-test-YYYY-MM-DD.csv`
 
+---
+
 ## Configuration Guide
 
 ### Required Settings
@@ -110,6 +125,7 @@ python tester.py --config config.json
 The tool supports common auth providers through configuration. Set `auth.provider` and adjust selectors:
 
 #### Custom Next.js/React Form
+
 ```json
 {
   "auth": {
@@ -125,6 +141,7 @@ The tool supports common auth providers through configuration. Set `auth.provide
 ```
 
 #### Auth.js / NextAuth
+
 ```json
 {
   "auth": {
@@ -140,6 +157,7 @@ The tool supports common auth providers through configuration. Set `auth.provide
 ```
 
 #### Clerk
+
 ```json
 {
   "auth": {
@@ -155,6 +173,7 @@ The tool supports common auth providers through configuration. Set `auth.provide
 ```
 
 #### Supabase Auth
+
 ```json
 {
   "auth": {
@@ -221,9 +240,12 @@ The tool supports common auth providers through configuration. Set `auth.provide
 }
 ```
 
+---
+
 ## Execution Modes
 
 ### Production Mode (Default)
+
 - **One password per run** - enforced by validation
 - Stops immediately on any security challenge
 - No automatic retries
@@ -235,6 +257,7 @@ The tool supports common auth providers through configuration. Set `auth.provide
 ```
 
 ### Staging Mode (Explicit Opt-In)
+
 - Multiple passwords allowed (up to `maximum_attempts`, max 10)
 - Requires manual confirmation before running
 - Still stops on security challenges
@@ -246,10 +269,13 @@ The tool supports common auth providers through configuration. Set `auth.provide
 ```
 
 **To enable staging mode:**
+
 1. Set `execution_mode: "staging"` in config
 2. Set `maximum_attempts` (1-10)
 3. Add multiple passwords to password.txt (one per line)
 4. Run tool - you must type "yes" to confirm
+
+---
 
 ## Understanding Results
 
@@ -265,6 +291,8 @@ The tool supports common auth providers through configuration. Set `auth.provide
 | `INCONCLUSIVE` | No clear indicators | Manual browser review needed |
 | `CONFIGURATION_ERROR` | Invalid config | Fix config.json |
 | `NAVIGATION_ERROR` | Browser navigation failed | Check URL/selectors |
+| `PASSWORD_FILE_ERROR` | Password file invalid | Fix password.txt |
+| `UNAUTHORIZED_HOST_BLOCKED` | Redirected to non-allowlisted host | Check allowed_hosts |
 
 ### Exit Codes
 
@@ -275,6 +303,8 @@ The tool supports common auth providers through configuration. Set `auth.provide
 | 2 | Test execution error |
 | 3 | Security challenge stopped test |
 | 130 | Interrupted by user (Ctrl+C) |
+
+---
 
 ## CSV Report Format
 
@@ -293,7 +323,9 @@ Reports saved to `reports/auth-test-YYYY-MM-DD.csv`:
 | `elapsed_time_ms` | Test duration |
 | `diagnostic_summary` | Sanitized description |
 
-**Never contains**: passwords, tokens, cookies, session data, full page content
+**Never contains**: passwords, tokens, cookies, session data, full page content, full URLs with secrets
+
+---
 
 ## Finding Selectors
 
@@ -306,6 +338,7 @@ Use browser DevTools to find reliable selectors:
 5. Avoid brittle selectors: `nth-child`, generated class names
 
 Example stable selectors:
+
 ```html
 <!-- Good: data-testid -->
 <input data-testid="email-input" name="email" />
@@ -317,42 +350,25 @@ Example stable selectors:
 <input class="css-1x2y3z4" />
 ```
 
-## Troubleshooting
+---
 
-### Browser doesn't open / Playwright errors
+## CLI Reference
+
 ```powershell
-# Reinstall browsers
-playwright install --force chromium
+python tester.py [OPTIONS]
 
-# Check dependencies
-playwright install-deps
+Options:
+  -c, --config PATH              Path to configuration JSON file (default: config.json)
+  -p, --password-file PATH       Override password file path from config
+  --create-example-config        Create example configuration file and exit
+  --create-example-password      Create example password file and exit
+  --example-config-name NAME     Name for example config (default: config.example.json)
+  --example-password-name NAME   Name for example password file (default: password.txt.example)
+  -v, --verbose                  Enable verbose output
+  -h, --help                     Show this help message and exit
 ```
 
-### "Target hostname not in allowed_hosts"
-- Add your target hostname to `allowed_hosts` in config.json
-- Must match exactly (subdomains count as different hosts)
-
-### "HTTPS required for non-localhost hosts"
-- Use HTTPS for production URLs
-- For local development, use `http://localhost:3000` and add `localhost` to allowed_hosts
-
-### "Exactly one password required" (Production mode)
-- Edit password.txt to contain only ONE non-empty line
-- Remove extra blank lines
-
-### "Too many passwords" (Staging mode)
-- Reduce passwords in file to ≤ maximum_attempts
-- Or increase maximum_attempts in config (max 10)
-
-### Selector not found / Timeout
-- Increase `navigation_timeout_ms`
-- Verify selector in DevTools Console: `document.querySelector('your-selector')`
-- Check if element is in iframe (need frame locator)
-
-### Test shows INCONCLUSIVE
-- Add success/failure selectors to config
-- Check `success_url_patterns` matches post-login URL
-- Review browser visually during test run
+---
 
 ## Running Unit Tests
 
@@ -364,10 +380,13 @@ pytest tests/ -v
 pytest tests/test_config.py -v
 pytest tests/test_password_file.py -v
 pytest tests/test_result_classification.py -v
+pytest tests/test_url_allowlist.py -v
 
 # Run with coverage
 pytest tests/ --cov=src --cov-report=term-missing
 ```
+
+---
 
 ## Project Structure
 
@@ -377,23 +396,101 @@ auth-audit/
 ├── config.example.json       # Example configuration
 ├── password.txt.example      # Example password file
 ├── requirements.txt          # Python dependencies
+├── pyproject.toml            # Package configuration
 ├── README.md                 # This file
 ├── .gitignore                # Git ignore rules
+├── config.json               # Your configuration (gitignored)
+├── password.txt              # Your passwords (gitignored)
 ├── reports/
-│   └── .gitkeep             # Keeps directory in git
+│   ├── .gitkeep             # Keeps directory in git
+│   └── auth-test-*.csv      # Generated reports (gitignored)
 ├── src/
-│   ├── __init__.py
-│   ├── config.py            # Configuration management
-│   ├── password_handler.py  # Secure password file handling
-│   ├── security_detector.py # Challenge detection
-│   ├── result_classifier.py # Result classification
-│   ├── reporter.py          # CSV reporting
-│   └── browser_automation.py # Playwright orchestration
+│   └── auth_audit/
+│       ├── __init__.py
+│       ├── config.py         # Configuration management
+│       ├── password_handler.py  # Secure password file handling
+│       ├── security_detector.py # Challenge detection
+│       ├── result_classifier.py # Result classification
+│       ├── reporter.py       # CSV reporting
+│       └── browser_automation.py # Playwright orchestration
 └── tests/
     ├── test_config.py
     ├── test_password_file.py
-    └── test_result_classification.py
+    ├── test_result_classification.py
+    └── test_url_allowlist.py
 ```
+
+---
+
+## Security Architecture
+
+### Defense in Depth
+
+1. **Configuration Validation** - Hostname allowlist, HTTPS enforcement, mode validation
+2. **Password File Validation** - Strict counting, mode enforcement, UTF-8 only
+3. **Browser Isolation** - Fresh context per attempt, headed mode for observation
+4. **Challenge Detection** - HTTP status, text patterns, DOM selectors, URL analysis
+5. **Immediate Stop** - No retries, no bypass attempts, no credential reuse
+6. **Sanitized Output** - Hostname-only reports, redacted diagnostics, no secrets
+
+### Threat Model
+
+| Threat | Mitigation |
+|--------|------------|
+| Credential leakage | No passwords in config, sanitized reports, gitignored files |
+| Brute force | Production: 1 password max; Staging: max 10 with opt-in |
+| Unauthorized targets | Hostname allowlist, HTTPS enforcement, redirect blocking |
+| Challenge bypass | Detection only, immediate stop, no solving logic |
+| Data exfiltration | No cookies/tokens stored, minimal diagnostics |
+| Accidental misuse | Staging requires manual "yes" confirmation |
+
+---
+
+## Troubleshooting
+
+### Browser Doesn't Open / Playwright Errors
+
+```powershell
+# Reinstall browsers
+playwright install --force chromium
+
+# Check dependencies
+playwright install-deps
+```
+
+### "Target hostname not in allowed_hosts"
+
+- Add your target hostname to `allowed_hosts` in config.json
+- Must match exactly (subdomains count as different hosts)
+
+### "HTTPS required for non-localhost hosts"
+
+- Use HTTPS for production URLs
+- For local development, use `http://localhost:3000` and add `localhost` to allowed_hosts
+
+### "Exactly one password required" (Production mode)
+
+- Edit password.txt to contain only ONE non-empty line
+- Remove extra blank lines
+
+### "Too many passwords" (Staging mode)
+
+- Reduce passwords in file to ≤ maximum_attempts
+- Or increase maximum_attempts in config (max 10)
+
+### Selector Not Found / Timeout
+
+- Increase `navigation_timeout_ms`
+- Verify selector in DevTools Console: `document.querySelector('your-selector')`
+- Check if element is in iframe (need frame locator)
+
+### Test Shows INCONCLUSIVE
+
+- Add success/failure selectors to config
+- Check `success_url_patterns` matches post-login URL
+- Review browser visually during test run
+
+---
 
 ## Security Limitations
 
@@ -408,6 +505,8 @@ This tool intentionally does NOT:
 - ❌ Auto-retry on failure
 - ❌ Resume interrupted sequences
 
+---
+
 ## Responsible Use Guidelines
 
 1. **Only test systems you own** or have explicit written authorization for
@@ -418,14 +517,34 @@ This tool intentionally does NOT:
 6. **Review results manually** - don't rely solely on automated classification
 7. **Report findings responsibly** through your organization's security process
 
+---
+
 ## License
 
 Internal use only - Authorized Security Testing Tool
 
+---
+
 ## Support
 
 For issues or questions:
+
 1. Check troubleshooting section above
 2. Run with `--verbose` for detailed output
 3. Review unit tests for expected behavior
 4. Consult Playwright documentation for browser automation issues
+
+---
+
+## Changelog
+
+### v1.0.0 (2026-10-14)
+
+- Initial release
+- Production/staging modes
+- Hostname allowlist & HTTPS enforcement
+- Security challenge detection (CAPTCHA, MFA, rate limits, lockouts)
+- Sanitized CSV reporting
+- Configurable selectors for major auth providers
+- 75 unit tests covering config, passwords, classification, URL validation
+- Complete Windows 11 PowerShell documentation

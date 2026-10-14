@@ -44,6 +44,25 @@ class AuthTester:
         self._observed_http_status: Optional[int] = None
         self._security_challenge_detected: Optional[SecurityChallengeResult] = None
         self._stop_requested: bool = False
+        
+        # Pre-compute allowed hosts set for fast lookup
+        self._allowed_hosts = set(config.allowed_hosts)
+    
+    def _check_host_allowed(self, url: str) -> bool:
+        """Check if the URL's hostname is in the allowed hosts list.
+        
+        Args:
+            url: URL to check.
+            
+        Returns:
+            True if host is allowed, False otherwise.
+        """
+        try:
+            parsed = urlparse(url)
+            hostname = parsed.hostname.lower() if parsed.hostname else ""
+            return hostname in self._allowed_hosts
+        except Exception:
+            return False
     
     def run(self, passwords: PasswordFileResult) -> List[TestRunResult]:
         """Run authentication tests for the provided passwords.
@@ -193,6 +212,23 @@ class AuthTester:
             
             # Small wait for any dynamic content
             page.wait_for_timeout(1000)
+            
+            # Check if navigation went to an unauthorized host
+            if not self._check_host_allowed(page.url):
+                elapsed = int((time.perf_counter() - start_time) * 1000)
+                return TestRunResult(
+                    password_index=attempt_number - 1,
+                    classification=ClassificationResult(
+                        result=AuthenticationResult.NAVIGATION_ERROR,
+                        confidence="high",
+                        diagnostic_summary=f"Navigation to unauthorized host: {page.url}"
+                    ),
+                    http_status=self._observed_http_status,
+                    security_challenge=None,
+                    elapsed_time_ms=elapsed,
+                    navigation_error=True,
+                    error_message=f"Navigation to unauthorized host: {page.url}"
+                )
             
             # 8. Check for security challenges after submit
             challenge = self.detector.check_page_content(page)
