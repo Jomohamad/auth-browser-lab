@@ -8,6 +8,7 @@ files and environment variables.
 import json
 import os
 from dataclasses import dataclass, field
+from enum import Enum
 from pathlib import Path
 from typing import Optional
 from urllib.parse import urlparse
@@ -20,7 +21,7 @@ class ConfigError(Exception):
     pass
 
 
-class AuthenticationProvider(str):
+class AuthenticationProvider(str, Enum):
     """Supported authentication providers."""
     CUSTOM = "custom"
     AUTHJS = "authjs"
@@ -29,13 +30,13 @@ class AuthenticationProvider(str):
     SUPABASE = "supabase"
 
 
-class ExecutionMode(str):
+class ExecutionMode(str, Enum):
     """Execution modes for the tool."""
     PRODUCTION = "production"
     STAGING = "staging"
 
 
-class ResultCategory(str):
+class ResultCategory(str, Enum):
     """Result classification categories."""
     SUCCESS_CONFIRMED = "SUCCESS_CONFIRMED"
     AUTHENTICATION_FAILED = "AUTHENTICATION_FAILED"
@@ -47,7 +48,7 @@ class ResultCategory(str):
     NAVIGATION_ERROR = "NAVIGATION_ERROR"
 
 
-class BrowserType(str):
+class BrowserType(str, Enum):
     """Supported browser types."""
     CHROMIUM = "chromium"
     FIREFOX = "firefox"
@@ -328,7 +329,7 @@ def create_example_config(output_path: str | Path) -> None:
         },
         "browser": {
             "browser": "chromium",
-            "headless": false,
+            "headless": False,
             "navigation_timeout_ms": 15000,
             "delay_before_submit_seconds": 3
         },

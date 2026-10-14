@@ -25,18 +25,15 @@ import sys
 import argparse
 from pathlib import Path
 
-# Add src to path for imports
-sys.path.insert(0, str(Path(__file__).parent / "src"))
-
-from src.config import (
+from auth_audit.config import (
     load_config, 
     create_example_config, 
     ConfigError,
     AppConfig,
     ExecutionMode
 )
-from src.password_handler import create_example_password_file, PasswordFileError
-from src.browser_automation import run_auth_test
+from auth_audit.password_handler import create_example_password_file, PasswordFileError
+from auth_audit.browser_automation import run_auth_test
 
 
 def parse_args() -> argparse.Namespace:

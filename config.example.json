@@ -4,32 +4,75 @@
     "your-app.example.com",
     "localhost"
   ],
-  "authentication_provider": "custom",
-  "username": "test-account@example.com",
-  "username_selector": "input[name=\"email\"]",
-  "password_selector": "input[name=\"password\"]",
-  "submit_selector": "button[type=\"submit\"]",
-  "success_url_patterns": [
-    "/dashboard",
-    "/home",
-    "/app"
-  ],
-  "success_selectors": [
-    "[data-testid=\"user-menu\"]",
-    ".user-profile",
-    "a[href*=\"logout\"]"
-  ],
-  "failure_selectors": [
-    "[data-testid=\"error-message\"]",
-    ".auth-error",
-    ".alert-danger"
-  ],
-  "delay_before_submit_seconds": 3,
-  "navigation_timeout_ms": 15000,
-  "browser": "chromium",
-  "headless": false,
-  "report_directory": "reports",
+  "auth": {
+    "provider": "custom",
+    "username": "test-account@example.com",
+    "username_selector": "input[name=\"email\"]",
+    "password_selector": "input[name=\"password\"]",
+    "submit_selector": "button[type=\"submit\"]",
+    "success_url_patterns": [
+      "/dashboard",
+      "/home",
+      "/app"
+    ],
+    "success_selectors": [
+      "[data-testid=\"user-menu\"]",
+      ".user-profile",
+      "a[href*=\"logout\"]"
+    ],
+    "failure_selectors": [
+      "[data-testid=\"error-message\"]",
+      ".auth-error",
+      ".alert-danger"
+    ]
+  },
+  "browser": {
+    "browser": "chromium",
+    "headless": false,
+    "navigation_timeout_ms": 15000,
+    "delay_before_submit_seconds": 3
+  },
+  "report": {
+    "report_directory": "reports"
+  },
+  "security": {
+    "http_status_codes": [
+      403,
+      429
+    ],
+    "blocking_text_patterns": [
+      "too many attempts",
+      "too many requests",
+      "rate limit",
+      "captcha",
+      "temporarily blocked",
+      "try again later",
+      "account locked",
+      "access denied",
+      "blocked",
+      "suspicious activity",
+      "verify you are human"
+    ],
+    "captcha_selectors": [
+      "[data-testid*='captcha']",
+      "[id*='captcha']",
+      "[class*='captcha']",
+      "iframe[src*='recaptcha']",
+      "iframe[src*='hcaptcha']",
+      ".g-recaptcha",
+      "#h-captcha"
+    ],
+    "mfa_selectors": [
+      "[data-testid*='mfa']",
+      "[data-testid*='2fa']",
+      "[id*='mfa']",
+      "[id*='2fa']",
+      ".mfa-challenge",
+      ".two-factor"
+    ]
+  },
   "stop_on_security_challenge": true,
   "execution_mode": "production",
-  "maximum_attempts": 1
+  "maximum_attempts": 1,
+  "password_file": "password.txt"
 }

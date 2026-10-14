@@ -4,7 +4,7 @@ import json
 import pytest
 from pathlib import Path
 
-from src.config import (
+from auth_audit.config import (
     load_config,
     create_example_config,
     AppConfig,
@@ -171,7 +171,7 @@ class TestConfigValidation:
         
         with pytest.raises(ConfigError) as exc:
             load_config(config_file)
-        assert "execution_mode must be" in str(exc.value)
+        assert "production" in str(exc.value) and "staging" in str(exc.value)
     
     def test_maximum_attempts_too_high(self, tmp_path):
         """Test that maximum_attempts > 10 is rejected."""
@@ -225,7 +225,7 @@ class TestConfigModels:
     
     def test_auth_config_defaults(self):
         """Test AuthConfig default values."""
-        from src.config import AuthConfig
+        from auth_audit.config import AuthConfig
         
         auth = AuthConfig()
         
@@ -237,7 +237,7 @@ class TestConfigModels:
     
     def test_browser_config_defaults(self):
         """Test BrowserConfig default values."""
-        from src.config import BrowserConfig
+        from auth_audit.config import BrowserConfig
         
         browser = BrowserConfig()
         
@@ -248,7 +248,7 @@ class TestConfigModels:
     
     def test_security_config_defaults(self):
         """Test SecurityChallengeConfig default values."""
-        from src.config import SecurityChallengeConfig
+        from auth_audit.config import SecurityChallengeConfig
         
         security = SecurityChallengeConfig()
         

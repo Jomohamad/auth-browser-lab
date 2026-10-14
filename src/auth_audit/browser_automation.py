@@ -12,10 +12,10 @@ from urllib.parse import urlparse
 
 from playwright.sync_api import Browser, BrowserContext, Page, Response, sync_playwright
 
-from .config import AppConfig, AuthenticationResult, BrowserType, ExecutionMode
+from .config import AppConfig, BrowserType, ExecutionMode
 from .password_handler import PasswordFileResult, read_password_file
 from .reporter import CSVReporter, TestReportRecord
-from .result_classifier import ResultClassifier, ClassificationResult
+from .result_classifier import ResultClassifier, ClassificationResult, AuthenticationResult
 from .security_detector import SecurityChallengeDetector, SecurityChallengeResult
 
 

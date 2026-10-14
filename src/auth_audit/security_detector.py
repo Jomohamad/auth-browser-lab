@@ -107,7 +107,7 @@ class SecurityChallengeDetector:
                 pass
         
         if matched_patterns or matched_selectors:
-            challenge_type = self._classify_challenge(matched_patterns, mfa_detected)
+            challenge_type = self._classify_challenge(matched_patterns, matched_selectors, mfa_detected)
             return SecurityChallengeResult(
                 detected=True,
                 challenge_type=challenge_type,
@@ -170,12 +170,15 @@ class SecurityChallengeDetector:
     def _classify_challenge(
         self, 
         patterns: List[str], 
+        matched_selectors: List[str],
         mfa_detected: bool
     ) -> str:
         """Classify the type of security challenge."""
         if mfa_detected:
             return "MFA_CHALLENGE"
         if any("captcha" in p for p in patterns):
+            return "CAPTCHA"
+        if any("captcha" in s for s in matched_selectors):
             return "CAPTCHA"
         if any("rate limit" in p or "too many" in p for p in patterns):
             return "RATE_LIMIT"

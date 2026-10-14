@@ -3,7 +3,7 @@
 import pytest
 from pathlib import Path
 
-from src.password_handler import (
+from auth_audit.password_handler import (
     read_password_file,
     validate_password_file_for_mode,
     create_example_password_file,
@@ -124,7 +124,7 @@ class TestPasswordFileReading:
         with pytest.raises(PasswordFileError) as exc:
             read_password_file(password_file, "staging", 5)
         
-        assert "At least one password required" in str(exc.value)
+        assert "no non-empty passwords" in str(exc.value)
     
     def test_nonexistent_file_raises_error(self, tmp_path):
         """Test that nonexistent file raises error."""
