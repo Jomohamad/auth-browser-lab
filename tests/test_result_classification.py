@@ -5,10 +5,9 @@ from unittest.mock import Mock, MagicMock, patch
 from playwright.sync_api import Page, Response
 
 from auth_audit.config import (
-    AuthConfig, 
-    SecurityChallengeConfig, 
+    AuthConfig,
+    SecurityChallengeConfig,
     ResultCategory,
-    ExecutionMode
 )
 from auth_audit.result_classifier import ResultClassifier, ClassificationResult, create_classifier, AuthenticationResult
 from auth_audit.security_detector import (
@@ -60,12 +59,21 @@ class TestResultClassifier:
         assert any("URL pattern matched" in ind for ind in result.indicators)
     
     def test_classify_success_by_selector(self, classifier, mock_page):
-        """Test classification as success when success selector found."""
+        """Test classification as success when only a success selector matches."""
         mock_page.url = "https://example.com/some-page"
-        mock_page.locator.return_value.count.side_effect = lambda: 1  # First call for success selector
-        
+
+        def locator_side_effect(selector):
+            mock_loc = Mock()
+            if selector in (".user-menu", "[data-testid='user-profile']"):
+                mock_loc.count.return_value = 1
+            else:
+                mock_loc.count.return_value = 0
+            return mock_loc
+
+        mock_page.locator.side_effect = locator_side_effect
+
         result = classifier.classify(mock_page, http_status=200, security_challenge=None)
-        
+
         assert result.result == AuthenticationResult.SUCCESS_CONFIRMED
         assert result.confidence == "high"
     

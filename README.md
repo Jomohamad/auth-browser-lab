@@ -1,19 +1,14 @@
-# Auth Audit Tool
+# Authentication Audit Tool
 
-A safe, configurable Python tool for **authorized authentication testing** against your own web applications using Playwright. Designed with strict security controls for responsible testing.
+A safe, config-driven Python + Playwright tool for **authorized authentication
+testing against websites you own or are explicitly authorized to test**. It
+processes **every non-empty password entry** in `password.txt` sequentially, in
+file order, using a **dedicated test account you control**, and never attempts
+to bypass CAPTCHA, MFA, WAF, rate limits, or account lockouts.
 
----
-
-## ⚠️ Important Security Notice
-
-**This tool is for AUTHORIZED TESTING ONLY.** It is designed to test authentication on applications you own and control.
-
-- ✅ Only use against systems you own or have explicit written authorization for
-- ✅ Use dedicated test accounts - never production user accounts
-- ❌ Never use against systems you don't own
-- ❌ Never attempt to bypass security controls (CAPTCHA, MFA, rate limits, WAF)
-- ❌ Never test credentials belonging to other users
-- ❌ Never use for brute-force or credential stuffing attacks
+> ⚠️ **Authorized use only.** Only target hosts you own or have written
+> authorization to test (declared in `allowed_hosts`). Use a dedicated test
+> account — never another user's account or production credentials.
 
 ---
 
@@ -21,530 +16,285 @@ A safe, configurable Python tool for **authorized authentication testing** again
 
 | Feature | Description |
 |---------|-------------|
-| **Safe by Default** | Production mode allows only ONE password per run |
-| **Hostname Allowlist** | Validates target against explicit allowed hosts |
-| **HTTPS Enforcement** | Requires HTTPS except for localhost |
-| **Security Challenge Detection** | Stops immediately on CAPTCHA, rate limits, lockouts, MFA |
-| **No Credential Logging** | Passwords, tokens, cookies never logged or stored |
-| **Sanitized Reports** | CSV output with only diagnostic information |
-| **Configurable Selectors** | Works with Custom, Auth.js, Clerk, Supabase, NextAuth |
-| **Staging Mode** | Optional multi-password testing with strict limits (explicit opt-in required) |
-| **Redirect Protection** | Blocks navigation to non-allowlisted hosts |
+| **Config-driven selectors** | Works with any username/password form |
+| **Explicit allowlist** | You declare authorized hosts via `allowed_hosts` |
+| **HTTPS enforced** | Required for all non-local hosts (HTTP only for loopback) |
+| **Process whole file** | Every non-empty entry processed once, in file order |
+| **Challenge stop** | Stops immediately on CAPTCHA/MFA/lockout/rate-limit/403/429 |
+| **No bypasses** | Never solves/bypasses challenges; no proxy/evasion tricks |
+| **No credential logging** | Passwords/tokens/cookies never logged or stored |
+| **Sanitized CSV** | Consolidated report with only safe diagnostics |
+
+There is **no** per-run attempt-limit or execution-mode setting — those were
+intentionally removed. The whole password file is processed in order.
 
 ---
 
 ## Requirements
 
-- **Python**: 3.10 or higher
+- **Python**: 3.10+
 - **OS**: Windows 11 (PowerShell), macOS, or Linux
-- **Playwright Chromium**: Installed via Playwright CLI
+- **Playwright Chromium**: installed via the Playwright CLI
 
 ---
 
 ## Quick Start (Windows 11 / PowerShell)
 
-### 1. Clone and Navigate
-
 ```powershell
 cd F:\main\My_Projects\auth-browser-lab
-```
-
-### 2. Create Virtual Environment
-
-```powershell
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
-```
 
-### 3. Install Dependencies
-
-```powershell
 pip install --upgrade pip
 pip install -r requirements.txt
-```
-
-### 4. Install Playwright Chromium
-
-```powershell
+pip install -e .
 playwright install chromium
 ```
 
-### 5. Create Configuration
+### Configure your authorized target
+
+Edit `config.json` (gitignored) — or generate an example:
 
 ```powershell
-# Generate example configuration
 python tester.py --create-example-config
-
-# Edit config.json with your settings
-notepad config.json
 ```
 
-### 6. Create Password File
+Key fields:
+
+| Field | Meaning |
+|-------|---------|
+| `target_url` | Login page URL (must be HTTPS unless localhost) |
+| `allowed_hosts` | Hosts you are authorized to test |
+| `auth.username` | Your **dedicated test account** |
+| `auth.username_selector` | CSS selector for the username field |
+| `auth.password_selector` | CSS selector for the password field |
+| `auth.submit_selector` | CSS selector for the submit/login button |
+| `auth.success_url_patterns` | Post-login URL paths that confirm success |
+| `auth.success_selectors` | Authenticated-page selectors (optional) |
+| `auth.failure_selectors` | Error-message selectors |
+| `auth.success_on_navigation_without_failure` | Operator-defined success signal (see below) |
+| `password_file` | Candidate password list (gitignored) |
+
+**When the login error element is your only correctness signal:** set
+`auth.success_on_navigation_without_failure: true`. With this on, a submit that
+**navigates the browser off the login page** and shows **no** configured failure
+element is classified as `SUCCESS_CONFIRMED`. This is how the Delta LMS config
+works — `#errorLbl` marks a wrong password; its absence after a real navigation
+means success. It still never claims success if the failure element is present
+or the browser stays on the login page.
+
+### Provide your dedicated test credentials
 
 ```powershell
-# Generate example password file
 python tester.py --create-example-password
-
-# Rename and add your test password
 rename password.txt.example password.txt
-notepad password.txt
+notepad password.txt      # one candidate password per line
 ```
 
-**Important**: For production mode, put **EXACTLY ONE** password in the file (one line, no extra blank lines).
+`password.txt` is gitignored and never logged. Username can also come from the
+`AUTH_TEST_USERNAME` environment variable.
 
-### 7. Run Test
+### Run
 
 ```powershell
-# Run with default config.json
-python tester.py
-
-# Or specify config file
 python tester.py --config config.json
 ```
 
-### 8. View Results
+Chromium opens (headed by default) and processes each entry against your login
+page. Results are summarized in the console and written to
+`reports/auth-test-YYYY-MM-DD.csv`.
 
-- Watch the browser window for visual confirmation
-- Check console output for result classification
-- View CSV report in `reports/auth-test-YYYY-MM-DD.csv`
+**Loop stops immediately on confirmed success.** The loop stops as soon as an
+entry yields `SUCCESS_CONFIRMED` (a configured success indicator is observed),
+so remaining entries are never processed. It also stops on a detected security
+challenge. `AUTHENTICATION_FAILED` and `INCONCLUSIVE` do **not** stop the run —
+and `INCONCLUSIVE` is never treated as success. When it stops on success you
+get a block like:
+
+```text
+Authentication result: SUCCESS_CONFIRMED
+Matched test fixture: entry #N
+Matched password (terminal only): <the working candidate>
+Further test entries: NOT PROCESSED (M remaining: entries N+1..N+M)
+Stop reason: AUTHENTICATION_SUCCESS
+```
+
+The matched password is printed **to the terminal only** (for your own
+authorized testing) and is **never** written to the CSV report or any log — the
+report redacts all candidate passwords.
 
 ---
 
-## Configuration Guide
+## Already-configured example: `dulms.deltauniv.edu.eg`
 
-### Required Settings
-
-| Setting | Description | Example |
-|---------|-------------|---------|
-| `target_url` | Full login page URL | `https://app.example.com/login` |
-| `allowed_hosts` | Array of allowed hostnames | `["app.example.com", "localhost"]` |
-| `auth.username` | Your dedicated test account email | `security-test@example.com` |
-
-### Authentication Provider Presets
-
-The tool supports common auth providers through configuration. Set `auth.provider` and adjust selectors:
-
-#### Custom Next.js/React Form
+`config.json` ships pre-configured for the login page at
+`https://dulms.deltauniv.edu.eg/login.aspx` using selectors verified in the
+browser:
 
 ```json
-{
-  "auth": {
-    "provider": "custom",
-    "username_selector": "input[name=\"email\"]",
-    "password_selector": "input[name=\"password\"]",
-    "submit_selector": "button[type=\"submit\"]",
-    "success_url_patterns": ["/dashboard", "/app"],
-    "success_selectors": "[data-testid=\"user-menu\"], .user-profile",
-    "failure_selectors": "[data-testid=\"error-message\"], .auth-error"
-  }
+"auth": {
+  "username_selector": "#txtname",
+  "password_selector": "#txtPass",
+  "submit_selector": "#Button1",
+  "failure_selectors": ["#errorLbl"]
 }
 ```
 
-#### Auth.js / NextAuth
+- `#txtname` — username field
+- `#txtPass` — password field
+- `#Button1` — login/submit button
+- `#errorLbl` — error label (shows "Please enter correct username" / invalid
+  credentials). Its presence ⇒ `AUTHENTICATION_FAILED`; absence ⇒ success is
+  only confirmed if a success indicator is also observed.
 
-```json
-{
-  "auth": {
-    "provider": "authjs",
-    "username_selector": "input#email",
-    "password_selector": "input#password",
-    "submit_selector": "button[type=\"submit\"]",
-    "success_url_patterns": ["/dashboard"],
-    "success_selectors": "[data-testid=\"user-menu\"]",
-    "failure_selectors": "[data-testid=\"error-message\"]"
-  }
-}
-```
+### What you must still provide
 
-#### Clerk
+Only you can supply the real credentials and success signal (they are never
+committed and never guessed by the tool):
 
-```json
-{
-  "auth": {
-    "provider": "clerk",
-    "username_selector": "input[name=\"identifier\"]",
-    "password_selector": "input[name=\"password\"]",
-    "submit_selector": "button[type=\"submit\"]",
-    "success_url_patterns": ["/dashboard"],
-    "success_selectors": ".clerk-user-button",
-    "failure_selectors": ".clerk-form-error"
-  }
-}
-```
-
-#### Supabase Auth
-
-```json
-{
-  "auth": {
-    "provider": "supabase",
-    "username_selector": "input[name=\"email\"]",
-    "password_selector": "input[name=\"password\"]",
-    "submit_selector": "button[type=\"submit\"]",
-    "success_url_patterns": ["/dashboard", "/account"],
-    "success_selectors": "[data-testid=\"user-avatar\"]",
-    "failure_selectors": ".supabase-auth-error"
-  }
-}
-```
-
-### Full Configuration Reference
-
-```json
-{
-  "target_url": "https://app.example.com/login",
-  "allowed_hosts": ["app.example.com", "localhost"],
-  "auth": {
-    "provider": "custom",
-    "username": "test@example.com",
-    "username_selector": "input[name=\"email\"]",
-    "password_selector": "input[name=\"password\"]",
-    "submit_selector": "button[type=\"submit\"]",
-    "success_url_patterns": ["/dashboard", "/home"],
-    "success_selectors": "[data-testid=\"user-menu\"], .user-profile",
-    "failure_selectors": "[data-testid=\"error-message\"], .auth-error"
-  },
-  "browser": {
-    "browser": "chromium",
-    "headless": false,
-    "navigation_timeout_ms": 15000,
-    "delay_before_submit_seconds": 3
-  },
-  "report": {
-    "report_directory": "reports"
-  },
-  "security": {
-    "http_status_codes": [403, 429],
-    "blocking_text_patterns": [
-      "too many attempts",
-      "rate limit",
-      "captcha",
-      "temporarily blocked",
-      "account locked",
-      "access denied"
-    ],
-    "captcha_selectors": [
-      "[data-testid*='captcha']",
-      "iframe[src*='recaptcha']",
-      ".g-recaptcha"
-    ],
-    "mfa_selectors": [
-      "[data-testid*='mfa']",
-      ".mfa-challenge"
-    ]
-  },
-  "stop_on_security_challenge": true,
-  "execution_mode": "production",
-  "maximum_attempts": 1,
-  "password_file": "password.txt"
-}
-```
+1. **Username** — `auth.username` is already set to your test account in
+   `config.json` (you can also export `AUTH_TEST_USERNAME` instead).
+2. **Real password** — put your actual test password in `password.txt`
+   (one line). The file ships with the placeholder
+   `CHANGE_ME_TO_YOUR_TEST_PASSWORD`; if it is still that placeholder you will
+   get `AUTHENTICATION_FAILED` (wrong password) even with a correct username.
+3. **Success indicator** — `success_selectors` is empty and
+   `success_url_patterns` defaults to `["/default.aspx"]`. Log in manually once,
+   note the URL you land on (and/or an element that only exists when logged in,
+   e.g. a logout link), and set one of them, for example:
+   ```json
+   "success_url_patterns": ["/default.aspx"],
+   "success_selectors": ["a[href*=\"logout\"]"]
+   ```
+   `/default.aspx` is a default guess — verify it in the browser. Without a
+   matching indicator, a correct login reports `INCONCLUSIVE` (the tool never
+   infers success).
 
 ---
 
-## Execution Modes
+## Troubleshooting / interpreting your result
 
-### Production Mode (Default)
+| What you see | Why | What to do |
+|--------------|-----|------------|
+| `AUTHENTICATION_FAILED` + `#errorLbl` ("Please enter correct username and password") | The site **rejected the credentials** — the tool read this from your page's own error label. | The script is working. Put the **correct password** in `password.txt` (and check the username). |
+| `INCONCLUSIVE` | The form submitted but **no configured success/failure indicator matched**. | Add the real post-login path to `success_url_patterns`, or an authenticated-only element to `success_selectors`. |
+| `SUCCESS_CONFIRMED` | A configured **success indicator was observed**. | Nothing — login works. |
+| `SELECTOR_NOT_FOUND` | A configured selector was missing/invisible/ambiguous/in an iframe. | Re-copy the selector in DevTools; the console prints the exact diagnostic (e.g., "matched 0 elements"). |
+| `LOGIN_PAGE_NOT_FOUND` | The login page returned HTTP 404. | Check `target_url`. |
+| `UNAUTHORIZED_HOST_BLOCKED` | A redirect went to a host not in `allowed_hosts`; credentials were **not** submitted there. | Add that host to `allowed_hosts` only if you're authorized to test it. |
+| `STOPPED_SECURITY_CHALLENGE` / `STOPPED_RATE_LIMIT` / `STOPPED_ACCESS_DENIED` | A CAPTCHA/MFA/lockout/rate-limit/403/429 signal was detected. | The run stops by design. Do not retry-loop; respect the control. |
 
-- **One password per run** - enforced by validation
-- Stops immediately on any security challenge
-- No automatic retries
-- Safe for testing against production systems
-
-```json
-"execution_mode": "production",
-"maximum_attempts": 1
-```
-
-### Staging Mode (Explicit Opt-In)
-
-- Multiple passwords allowed (up to `maximum_attempts`, max 10)
-- Requires manual confirmation before running
-- Still stops on security challenges
-- Use ONLY against staging/test environments with written authorization
-
-```json
-"execution_mode": "staging",
-"maximum_attempts": 3
-```
-
-**To enable staging mode:**
-
-1. Set `execution_mode: "staging"` in config
-2. Set `maximum_attempts` (1-10)
-3. Add multiple passwords to password.txt (one per line)
-4. Run tool - you must type "yes" to confirm
+Note: a real `AUTHENTICATION_FAILED` for this site is normal until
+`password.txt` holds the correct password — it is not a code fault.
 
 ---
 
-## Understanding Results
+## Finding selectors for any other site
 
-### Result Categories
-
-| Result | Meaning | Action |
-|--------|---------|--------|
-| `SUCCESS_CONFIRMED` | Explicit success indicator found (URL/selector) | Login works |
-| `AUTHENTICATION_FAILED` | Explicit failure indicator found | Invalid credentials |
-| `STOPPED_SECURITY_CHALLENGE` | CAPTCHA, MFA, or generic challenge | Review security settings |
-| `STOPPED_RATE_LIMIT` | HTTP 429 or rate limit text | Check rate limiting config |
-| `STOPPED_ACCESS_DENIED` | HTTP 403 or access denied | Check WAF/IP blocking |
-| `INCONCLUSIVE` | No clear indicators | Manual browser review needed |
-| `CONFIGURATION_ERROR` | Invalid config | Fix config.json |
-| `NAVIGATION_ERROR` | Browser navigation failed | Check URL/selectors |
-| `PASSWORD_FILE_ERROR` | Password file invalid | Fix password.txt |
-| `UNAUTHORIZED_HOST_BLOCKED` | Redirected to non-allowlisted host | Check allowed_hosts |
-
-### Exit Codes
-
-| Code | Meaning |
-|------|---------|
-| 0 | Completed (success or inconclusive) |
-| 1 | Configuration/password file error |
-| 2 | Test execution error |
-| 3 | Security challenge stopped test |
-| 130 | Interrupted by user (Ctrl+C) |
+1. Open the login page, press **F12** → **Elements**.
+2. Right-click the field → Inspect → right-click the node → **Copy** →
+   **Copy selector**.
+3. Prefer stable attributes: `id`, `name`, `data-testid`.
+4. For the error message and any authenticated-only element, copy those
+   selectors into `failure_selectors` / `success_selectors`.
 
 ---
 
-## CSV Report Format
+## Result categories
 
-Reports saved to `reports/auth-test-YYYY-MM-DD.csv`:
+| Result | Meaning |
+|--------|---------|
+| `SUCCESS_CONFIRMED` | A configured success indicator was observed |
+| `AUTHENTICATION_FAILED` | A configured failure indicator was observed |
+| `LOGIN_PAGE_NOT_FOUND` | The login page returned HTTP 404 |
+| `SELECTOR_NOT_FOUND` | A configured selector was missing/invisible/ambiguous/in an iframe |
+| `FORM_NOT_READY` | The login form could not be found or readied |
+| `STOPPED_SECURITY_CHALLENGE` | CAPTCHA / MFA / lockout / generic challenge |
+| `STOPPED_RATE_LIMIT` | HTTP 429 or rate-limit text |
+| `STOPPED_ACCESS_DENIED` | HTTP 403 or access-denied text |
+| `NAVIGATION_ERROR` | Navigation failed |
+| `UNAUTHORIZED_HOST_BLOCKED` | Redirected to a host not in `allowed_hosts` |
+| `INCONCLUSIVE` | No configured indicator matched — manual review needed |
+| `CONFIGURATION_ERROR` | Invalid configuration |
+
+---
+
+## CSV report
+
+One consolidated report per day: `reports/auth-test-YYYY-MM-DD.csv`, one row
+per processed entry.
 
 | Column | Description |
 |--------|-------------|
 | `timestamp_utc` | ISO 8601 timestamp |
-| `target_host` | Hostname only (no credentials) |
-| `authentication_provider` | Provider name |
-| `execution_mode` | production/staging |
-| `attempt_number` | 1-based attempt index |
-| `result` | Classification result |
-| `http_status` | Auth endpoint HTTP status |
+| `attempt_number` / `total_entries` | Index within run / total non-empty entries |
+| `result` | Result category |
+| `http_status` | Observed auth-related HTTP status |
 | `security_challenge_detected` | true/false |
-| `elapsed_time_ms` | Test duration |
-| `diagnostic_summary` | Sanitized description |
+| `elapsed_time_ms` | Time for this entry |
+| `diagnostic_summary` | Sanitized diagnostic text |
+| `target_host`, `authentication_provider` | Context |
+| `login_page_status` / `auth_response_status` | Split document/API status |
+| `final_page_path` | Final URL path (no query/fragment) |
+| `page_title`, `form_detected`, `selector_diagnostic` | Diagnostics |
 
-**Never contains**: passwords, tokens, cookies, session data, full page content, full URLs with secrets
-
----
-
-## Finding Selectors
-
-Use browser DevTools to find reliable selectors:
-
-1. Open login page in browser
-2. Right-click element → Inspect
-3. Right-click in Elements panel → Copy → Copy selector
-4. Prefer stable attributes: `data-testid`, `name`, `id`
-5. Avoid brittle selectors: `nth-child`, generated class names
-
-Example stable selectors:
-
-```html
-<!-- Good: data-testid -->
-<input data-testid="email-input" name="email" />
-
-<!-- Good: name attribute -->
-<input name="email" type="email" />
-
-<!-- Avoid: generated classes -->
-<input class="css-1x2y3z4" />
-```
+It never contains passwords, hashes, cookies, tokens, authorization headers,
+request bodies, full page HTML, or full URLs with query strings/fragments.
 
 ---
 
-## CLI Reference
+## Tests
 
 ```powershell
-python tester.py [OPTIONS]
-
-Options:
-  -c, --config PATH              Path to configuration JSON file (default: config.json)
-  -p, --password-file PATH       Override password file path from config
-  --create-example-config        Create example configuration file and exit
-  --create-example-password      Create example password file and exit
-  --example-config-name NAME     Name for example config (default: config.example.json)
-  --example-password-name NAME   Name for example password file (default: password.txt.example)
-  -v, --verbose                  Enable verbose output
-  -h, --help                     Show this help message and exit
+python -m pytest tests -v
 ```
+
+The suite covers configuration/allowlist/HTTPS validation, full-file password
+processing (order, blank lines, CRLF/LF, no over-normalization, error cases),
+result classification, security-challenge detection, redirect/origin blocking,
+CSV sanitization, and confirms no attempt-limit config remains. Unit tests use
+mocks and fixtures only — they never contact a live website. Live runs against
+your own site are performed by `tester.py`, not the test suite.
 
 ---
 
-## Running Unit Tests
-
-```powershell
-# Run all tests
-pytest tests/ -v
-
-# Run specific test file
-pytest tests/test_config.py -v
-pytest tests/test_password_file.py -v
-pytest tests/test_result_classification.py -v
-pytest tests/test_url_allowlist.py -v
-
-# Run with coverage
-pytest tests/ --cov=src --cov-report=term-missing
-```
-
----
-
-## Project Structure
+## Project structure
 
 ```
-auth-audit/
-├── tester.py                 # Main entry point
-├── config.example.json       # Example configuration
-├── password.txt.example      # Example password file
-├── requirements.txt          # Python dependencies
-├── pyproject.toml            # Package configuration
-├── README.md                 # This file
-├── .gitignore                # Git ignore rules
-├── config.json               # Your configuration (gitignored)
-├── password.txt              # Your passwords (gitignored)
-├── reports/
-│   ├── .gitkeep             # Keeps directory in git
-│   └── auth-test-*.csv      # Generated reports (gitignored)
-├── src/
-│   └── auth_audit/
-│       ├── __init__.py
-│       ├── config.py         # Configuration management
-│       ├── password_handler.py  # Secure password file handling
-│       ├── security_detector.py # Challenge detection
-│       ├── result_classifier.py # Result classification
-│       ├── reporter.py       # CSV reporting
-│       └── browser_automation.py # Playwright orchestration
+auth-browser-lab/
+├── tester.py                  # CLI entry point
+├── config.json                # Authorized target config (gitignored)
+├── config.example.json        # Example configuration
+├── password.txt               # Candidate password list (gitignored)
+├── password.txt.example       # Example password file
+├── requirements.txt
+├── pyproject.toml
+├── README.md
+├── .gitignore
+├── reports/ (auth-test-YYYY-MM-DD.csv)
+├── src/auth_audit/
+│   ├── config.py              # Config + allowlist + HTTPS enforcement
+│   ├── password_handler.py    # Full-file reading (no attempt limit)
+│   ├── security_detector.py   # Challenge detection
+│   ├── result_classifier.py   # Result classification
+│   ├── reporter.py            # Sanitized CSV reporting
+│   └── browser_automation.py  # Playwright orchestration
 └── tests/
     ├── test_config.py
     ├── test_password_file.py
     ├── test_result_classification.py
-    └── test_url_allowlist.py
+    ├── test_url_allowlist.py
+    └── test_attempt_limit_removed.py
 ```
 
 ---
 
-## Security Architecture
+## Responsible use
 
-### Defense in Depth
-
-1. **Configuration Validation** - Hostname allowlist, HTTPS enforcement, mode validation
-2. **Password File Validation** - Strict counting, mode enforcement, UTF-8 only
-3. **Browser Isolation** - Fresh context per attempt, headed mode for observation
-4. **Challenge Detection** - HTTP status, text patterns, DOM selectors, URL analysis
-5. **Immediate Stop** - No retries, no bypass attempts, no credential reuse
-6. **Sanitized Output** - Hostname-only reports, redacted diagnostics, no secrets
-
-### Threat Model
-
-| Threat | Mitigation |
-|--------|------------|
-| Credential leakage | No passwords in config, sanitized reports, gitignored files |
-| Brute force | Production: 1 password max; Staging: max 10 with opt-in |
-| Unauthorized targets | Hostname allowlist, HTTPS enforcement, redirect blocking |
-| Challenge bypass | Detection only, immediate stop, no solving logic |
-| Data exfiltration | No cookies/tokens stored, minimal diagnostics |
-| Accidental misuse | Staging requires manual "yes" confirmation |
-
----
-
-## Troubleshooting
-
-### Browser Doesn't Open / Playwright Errors
-
-```powershell
-# Reinstall browsers
-playwright install --force chromium
-
-# Check dependencies
-playwright install-deps
-```
-
-### "Target hostname not in allowed_hosts"
-
-- Add your target hostname to `allowed_hosts` in config.json
-- Must match exactly (subdomains count as different hosts)
-
-### "HTTPS required for non-localhost hosts"
-
-- Use HTTPS for production URLs
-- For local development, use `http://localhost:3000` and add `localhost` to allowed_hosts
-
-### "Exactly one password required" (Production mode)
-
-- Edit password.txt to contain only ONE non-empty line
-- Remove extra blank lines
-
-### "Too many passwords" (Staging mode)
-
-- Reduce passwords in file to ≤ maximum_attempts
-- Or increase maximum_attempts in config (max 10)
-
-### Selector Not Found / Timeout
-
-- Increase `navigation_timeout_ms`
-- Verify selector in DevTools Console: `document.querySelector('your-selector')`
-- Check if element is in iframe (need frame locator)
-
-### Test Shows INCONCLUSIVE
-
-- Add success/failure selectors to config
-- Check `success_url_patterns` matches post-login URL
-- Review browser visually during test run
-
----
-
-## Security Limitations
-
-This tool intentionally does NOT:
-
-- ❌ Brute-force passwords
-- ❌ Rotate IPs/proxies
-- ❌ Bypass CAPTCHA/MFA
-- ❌ Evade WAF/rate limits
-- ❌ Access other users' accounts
-- ❌ Store credentials
-- ❌ Auto-retry on failure
-- ❌ Resume interrupted sequences
-
----
-
-## Responsible Use Guidelines
-
-1. **Only test systems you own** or have explicit written authorization for
-2. **Use dedicated test accounts** - never production user accounts
-3. **Run during low-traffic periods** to avoid impacting users
-4. **Coordinate with your security team** before testing
-5. **Document your testing scope** and get approval
-6. **Review results manually** - don't rely solely on automated classification
-7. **Report findings responsibly** through your organization's security process
-
----
-
-## License
-
-Internal use only - Authorized Security Testing Tool
-
----
-
-## Support
-
-For issues or questions:
-
-1. Check troubleshooting section above
-2. Run with `--verbose` for detailed output
-3. Review unit tests for expected behavior
-4. Consult Playwright documentation for browser automation issues
-
----
-
-## Changelog
-
-### v1.0.0 (2026-10-14)
-
-- Initial release
-- Production/staging modes
-- Hostname allowlist & HTTPS enforcement
-- Security challenge detection (CAPTCHA, MFA, rate limits, lockouts)
-- Sanitized CSV reporting
-- Configurable selectors for major auth providers
-- 75 unit tests covering config, passwords, classification, URL validation
-- Complete Windows 11 PowerShell documentation
+- Test only hosts you own / are authorized to test (declare them in
+  `allowed_hosts`).
+- Use a dedicated test account; never another user's account.
+- The tool **stops** on challenges and **never** bypasses CAPTCHA/MFA/WAF/rate
+  limits/lockouts — respect those controls.
+- Keep credentials out of source control (`config.json`, `password.txt`,
+  `.env` are gitignored).

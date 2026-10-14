@@ -1,45 +1,38 @@
 {
-  "target_url": "https://your-app.example.com/login",
+  "target_url": "https://your-authorized-app.example.com/login",
   "allowed_hosts": [
-    "your-app.example.com",
+    "your-authorized-app.example.com",
     "localhost"
   ],
   "auth": {
     "provider": "custom",
-    "username": "test-account@example.com",
+    "username": "YOUR_DEDICATED_TEST_USERNAME",
     "username_selector": "input[name=\"email\"]",
     "password_selector": "input[name=\"password\"]",
     "submit_selector": "button[type=\"submit\"]",
     "success_url_patterns": [
-      "/dashboard",
-      "/home",
-      "/app"
+      "/dashboard"
     ],
     "success_selectors": [
-      "[data-testid=\"user-menu\"]",
-      ".user-profile",
-      "a[href*=\"logout\"]"
+      "[data-testid=\"user-menu\"]"
     ],
     "failure_selectors": [
-      "[data-testid=\"error-message\"]",
-      ".auth-error",
-      ".alert-danger"
-    ]
+      "[data-testid=\"login-error\"]",
+      ".error-message"
+    ],
+    "success_on_navigation_without_failure": false
   },
   "browser": {
     "browser": "chromium",
     "headless": false,
-    "navigation_timeout_ms": 15000,
-    "delay_before_submit_seconds": 3
+    "navigation_timeout_ms": 20000,
+    "delay_before_submit_seconds": 1
   },
   "report": {
     "report_directory": "reports"
   },
   "security": {
-    "http_status_codes": [
-      403,
-      429
-    ],
+    "http_status_codes": [403, 429],
     "blocking_text_patterns": [
       "too many attempts",
       "too many requests",
@@ -72,7 +65,5 @@
     ]
   },
   "stop_on_security_challenge": true,
-  "execution_mode": "production",
-  "maximum_attempts": 1,
   "password_file": "password.txt"
 }

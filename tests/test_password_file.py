@@ -1,201 +1,176 @@
-"""Unit tests for password file handling."""
+"""Unit tests for full password-file processing (no attempt limit)."""
 
 import pytest
 from pathlib import Path
 
 from auth_audit.password_handler import (
     read_password_file,
-    validate_password_file_for_mode,
+    validate_password_file,
     create_example_password_file,
     PasswordFileError,
     PasswordFileResult,
 )
 
 
-class TestPasswordFileReading:
-    """Tests for password file reading and validation."""
-    
-    def test_read_single_password_production(self, tmp_path):
-        """Test reading a single password for production mode."""
-        password_file = tmp_path / "password.txt"
-        password_file.write_text("MySecurePassword123!\n", encoding="utf-8")
-        
-        result = read_password_file(password_file, "production", 1)
-        
+class TestReadAllEntries:
+    """Every non-empty entry is read, in order, with no attempt cap."""
+
+    def test_reads_all_entries_in_order(self, tmp_path):
+        """All non-empty entries are returned in original order."""
+        f = tmp_path / "password.txt"
+        f.write_text("alpha\nbeta\ngamma\n", encoding="utf-8")
+
+        result = read_password_file(f)
+
         assert isinstance(result, PasswordFileResult)
-        assert result.count == 1
-        assert result.passwords == ["MySecurePassword123!"]
-        assert result.mode == "production"
-        assert result.max_allowed == 1
-    
-    def test_read_password_with_whitespace(self, tmp_path):
-        """Test that whitespace is stripped from passwords."""
-        password_file = tmp_path / "password.txt"
-        password_file.write_text("  MyPassword  \n", encoding="utf-8")
-        
-        result = read_password_file(password_file, "production", 1)
-        
-        assert result.passwords == ["MyPassword"]
-    
-    def test_read_password_windows_line_endings(self, tmp_path):
-        """Test handling of Windows line endings (CRLF)."""
-        password_file = tmp_path / "password.txt"
-        password_file.write_bytes(b"Password1\r\n")
-        
-        result = read_password_file(password_file, "production", 1)
-        
-        assert result.passwords == ["Password1"]
-    
-    def test_read_password_mixed_line_endings(self, tmp_path):
-        """Test handling of mixed line endings."""
-        password_file = tmp_path / "password.txt"
-        password_file.write_bytes(b"Password1\r\nPassword2\n")
-        
-        result = read_password_file(password_file, "staging", 5)
-        
-        assert result.passwords == ["Password1", "Password2"]
-    
-    def test_read_password_ignores_blank_lines(self, tmp_path):
-        """Test that blank lines are ignored."""
-        password_file = tmp_path / "password.txt"
-        password_file.write_text("\n\nPassword1\n\n\n", encoding="utf-8")
-        
-        result = read_password_file(password_file, "production", 1)
-        
-        assert result.passwords == ["Password1"]
-    
-    def test_read_password_utf8(self, tmp_path):
-        """Test UTF-8 encoded passwords."""
-        password_file = tmp_path / "password.txt"
-        password_file.write_text("Pässwörd🔒\n", encoding="utf-8")
-        
-        result = read_password_file(password_file, "production", 1)
-        
-        assert result.passwords == ["Pässwörd🔒"]
-    
-    def test_production_mode_requires_exactly_one_password(self, tmp_path):
-        """Test that production mode requires exactly one password."""
-        password_file = tmp_path / "password.txt"
-        password_file.write_text("Password1\nPassword2\n", encoding="utf-8")
-        
-        with pytest.raises(PasswordFileError) as exc:
-            read_password_file(password_file, "production", 1)
-        
-        assert "Exactly one password required" in str(exc.value)
-        assert "found 2" in str(exc.value)
-    
-    def test_production_mode_rejects_empty_file(self, tmp_path):
-        """Test that production mode rejects empty password file."""
-        password_file = tmp_path / "password.txt"
-        password_file.write_text("\n\n\n", encoding="utf-8")
-        
-        with pytest.raises(PasswordFileError) as exc:
-            read_password_file(password_file, "production", 1)
-        
-        assert "no non-empty passwords" in str(exc.value)
-    
-    def test_staging_mode_allows_multiple_passwords(self, tmp_path):
-        """Test that staging mode allows multiple passwords up to limit."""
-        password_file = tmp_path / "password.txt"
-        password_file.write_text("Password1\nPassword2\nPassword3\n", encoding="utf-8")
-        
-        result = read_password_file(password_file, "staging", 5)
-        
+        assert result.passwords == ["alpha", "beta", "gamma"]
         assert result.count == 3
-        assert result.max_allowed == 5
-        assert result.passwords == ["Password1", "Password2", "Password3"]
-    
-    def test_staging_mode_enforces_max_attempts(self, tmp_path):
-        """Test that staging mode enforces maximum attempts limit."""
-        password_file = tmp_path / "password.txt"
-        password_file.write_text("P1\nP2\nP3\nP4\nP5\n", encoding="utf-8")
-        
+
+    def test_no_attempt_limit_many_entries(self, tmp_path):
+        """A large file is fully read (no cap, no truncation)."""
+        f = tmp_path / "password.txt"
+        f.write_text("\n".join(f"pw{n}" for n in range(50)), encoding="utf-8")
+
+        result = read_password_file(f)
+
+        assert result.count == 50
+        assert result.passwords == [f"pw{n}" for n in range(50)]
+
+    def test_blank_lines_ignored(self, tmp_path):
+        f = tmp_path / "password.txt"
+        f.write_text("\n\nalpha\n\n   \nbeta\n\n", encoding="utf-8")
+
+        result = read_password_file(f)
+
+        assert result.passwords == ["alpha", "beta"]
+
+    def test_windows_line_endings(self, tmp_path):
+        f = tmp_path / "password.txt"
+        f.write_bytes(b"alpha\r\nbeta\r\ngamma\r\n")
+
+        result = read_password_file(f)
+
+        assert result.passwords == ["alpha", "beta", "gamma"]
+
+    def test_unix_line_endings(self, tmp_path):
+        f = tmp_path / "password.txt"
+        f.write_bytes(b"alpha\nbeta\ngamma\n")
+
+        result = read_password_file(f)
+
+        assert result.passwords == ["alpha", "beta", "gamma"]
+
+    def test_lone_cr_line_endings(self, tmp_path):
+        f = tmp_path / "password.txt"
+        f.write_bytes(b"alpha\rbeta\rgamma")
+
+        result = read_password_file(f)
+
+        assert result.passwords == ["alpha", "beta", "gamma"]
+
+    def test_mixed_line_endings(self, tmp_path):
+        f = tmp_path / "password.txt"
+        f.write_bytes(b"alpha\r\nbeta\ngamma\r")
+
+        result = read_password_file(f)
+
+        assert result.passwords == ["alpha", "beta", "gamma"]
+
+    def test_no_excessive_normalization_of_contents(self, tmp_path):
+        """Interior/edge characters of a valid password are preserved."""
+        f = tmp_path / "password.txt"
+        # Leading/trailing spaces are significant content and must be kept.
+        f.write_text(" P@ss w/ spaces \n", encoding="utf-8")
+
+        result = read_password_file(f)
+
+        assert result.passwords == [" P@ss w/ spaces "]
+
+    def test_utf8_entries(self, tmp_path):
+        f = tmp_path / "password.txt"
+        f.write_text("Pässwörd🔒\n正常密码\n", encoding="utf-8")
+
+        result = read_password_file(f)
+
+        assert result.passwords == ["Pässwörd🔒", "正常密码"]
+
+    def test_no_trailing_newline(self, tmp_path):
+        f = tmp_path / "password.txt"
+        f.write_text("alpha\nbeta", encoding="utf-8")
+
+        result = read_password_file(f)
+
+        assert result.passwords == ["alpha", "beta"]
+
+
+class TestPasswordFileErrors:
+    """Missing/empty/unreadable/malformed files raise before any browser use."""
+
+    def test_missing_file(self, tmp_path):
+        missing = tmp_path / "nope.txt"
         with pytest.raises(PasswordFileError) as exc:
-            read_password_file(password_file, "staging", 3)
-        
-        assert "Too many passwords" in str(exc.value)
-        assert "Maximum allowed: 3" in str(exc.value)
-    
-    def test_staging_mode_requires_at_least_one(self, tmp_path):
-        """Test that staging mode requires at least one password."""
-        password_file = tmp_path / "password.txt"
-        password_file.write_text("", encoding="utf-8")
-        
-        with pytest.raises(PasswordFileError) as exc:
-            read_password_file(password_file, "staging", 5)
-        
-        assert "no non-empty passwords" in str(exc.value)
-    
-    def test_nonexistent_file_raises_error(self, tmp_path):
-        """Test that nonexistent file raises error."""
-        password_file = tmp_path / "nonexistent.txt"
-        
-        with pytest.raises(PasswordFileError) as exc:
-            read_password_file(password_file, "production", 1)
-        
+            read_password_file(missing)
         assert "not found" in str(exc.value)
-    
-    def test_directory_instead_of_file_raises_error(self, tmp_path):
-        """Test that directory path raises error."""
+
+    def test_empty_file(self, tmp_path):
+        f = tmp_path / "password.txt"
+        f.write_text("")
         with pytest.raises(PasswordFileError) as exc:
-            read_password_file(tmp_path, "production", 1)
-        
-        assert "not a file" in str(exc.value)
-    
-    def test_invalid_encoding_raises_error(self, tmp_path):
-        """Test that non-UTF-8 file raises error."""
-        password_file = tmp_path / "password.txt"
-        password_file.write_bytes(b"\xff\xfe")  # Invalid UTF-8
-        
+            read_password_file(f)
+        assert "no non-empty" in str(exc.value)
+
+    def test_only_blank_lines_file(self, tmp_path):
+        f = tmp_path / "password.txt"
+        f.write_text("\n   \n\t\n")
         with pytest.raises(PasswordFileError) as exc:
-            read_password_file(password_file, "production", 1)
-        
-        assert "UTF-8 encoded" in str(exc.value)
-    
-    def test_unknown_execution_mode_raises_error(self, tmp_path):
-        """Test that unknown execution mode raises error."""
-        password_file = tmp_path / "password.txt"
-        password_file.write_text("Password1\n", encoding="utf-8")
-        
+            read_password_file(f)
+        assert "no non-empty" in str(exc.value)
+
+    def test_directory_instead_of_file(self, tmp_path):
         with pytest.raises(PasswordFileError) as exc:
-            read_password_file(password_file, "unknown", 1)
-        
-        assert "Unknown execution mode" in str(exc.value)
+            read_password_file(tmp_path)
+        assert "not a regular file" in str(exc.value)
+
+    def test_invalid_utf8(self, tmp_path):
+        f = tmp_path / "password.txt"
+        f.write_bytes(b"\xff\xfe")
+        with pytest.raises(PasswordFileError) as exc:
+            read_password_file(f)
+        assert "UTF-8" in str(exc.value)
 
 
-class TestPasswordFileValidation:
-    """Tests for password file validation without returning passwords."""
-    
-    def test_validate_production_mode(self, tmp_path):
-        """Test validation for production mode."""
-        password_file = tmp_path / "password.txt"
-        password_file.write_text("Password1\n", encoding="utf-8")
-        
-        # Should not raise
-        validate_password_file_for_mode(password_file, "production", 1)
-    
-    def test_validate_staging_mode(self, tmp_path):
-        """Test validation for staging mode."""
-        password_file = tmp_path / "password.txt"
-        password_file.write_text("Password1\nPassword2\n", encoding="utf-8")
-        
-        # Should not raise
-        validate_password_file_for_mode(password_file, "staging", 5)
+class TestValidateAndExample:
+    """validate_password_file + example file generation."""
 
+    def test_validate_ok(self, tmp_path):
+        f = tmp_path / "password.txt"
+        f.write_text("only-one\n")
+        validate_password_file(f)  # should not raise
 
-class TestExamplePasswordFile:
-    """Tests for example password file creation."""
-    
+    def test_validate_empty_raises(self, tmp_path):
+        f = tmp_path / "password.txt"
+        f.write_text("")
+        with pytest.raises(PasswordFileError):
+            validate_password_file(f)
+
     def test_create_example_password_file(self, tmp_path):
-        """Test creating example password file."""
-        output_path = tmp_path / "password.txt.example"
-        create_example_password_file(output_path)
-        
-        assert output_path.exists()
-        
-        content = output_path.read_text(encoding="utf-8")
-        assert "INSTRUCTIONS" in content
-        assert "PRODUCTION mode" in content
-        assert "STAGING mode" in content
-        assert "MySecureTestPassword123!" in content
-        assert ".gitignore" in content
+        out = tmp_path / "password.txt.example"
+        create_example_password_file(out)
+
+        content = out.read_text(encoding="utf-8")
+        assert "one candidate password per line" in content
+        assert "order" in content
+        assert "gitignored" in content
+
+
+class TestNoPasswordLeakage:
+    """Ensure password values are never surfaced by error messages."""
+
+    def test_empty_file_error_contains_no_password(self, tmp_path):
+        # Errors reference the file, never the (absent) password content.
+        f = tmp_path / "password.txt"
+        f.write_text("   \n")
+        with pytest.raises(PasswordFileError) as exc:
+            read_password_file(f)
+        # No accidental password material in the message.
+        assert "password entries" in str(exc.value)

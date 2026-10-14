@@ -1,37 +1,28 @@
 {
   "target_url": "https://dulms.deltauniv.edu.eg/login.aspx",
   "allowed_hosts": [
-    "dulms.deltauniv.edu.eg",
-    "localhost"
+    "dulms.deltauniv.edu.eg"
   ],
   "auth": {
     "provider": "custom",
-    "username": "security-test@example.com",
-    "username_selector": "input#txtname",
-    "password_selector": "input#txtPass",
-    "submit_selector": "input#Button1",
+    "username": "42610817",
+    "username_selector": "#txtname",
+    "password_selector": "#txtPass",
+    "submit_selector": "#Button1",
     "success_url_patterns": [
-      "/dashboard",
-      "/home",
-      "/default.aspx"
+      "/Profile/StudentProfile"
     ],
-    "success_selectors": [
-      "[data-testid=\"user-menu\"]",
-      ".user-profile",
-      "a[href*=\"logout\"]"
-    ],
+    "success_selectors": [],
     "failure_selectors": [
-      "[data-testid=\"error-message\"]",
-      ".auth-error",
-      ".alert-danger",
-      ".validation-summary-errors"
-    ]
+      "#errorLbl"
+    ],
+    "success_on_navigation_without_failure": true
   },
   "browser": {
     "browser": "chromium",
     "headless": false,
     "navigation_timeout_ms": 15000,
-    "delay_before_submit_seconds": 3
+    "delay_before_submit_seconds": 0
   },
   "report": {
     "report_directory": "reports"
@@ -70,7 +61,5 @@
     ]
   },
   "stop_on_security_challenge": true,
-  "execution_mode": "production",
-  "maximum_attempts": 1,
   "password_file": "password.txt"
 }

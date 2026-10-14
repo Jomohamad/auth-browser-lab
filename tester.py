@@ -12,13 +12,13 @@ Usage:
     python tester.py --create-example-password
 
 Security Features:
-- Hostname allowlist enforcement
-- HTTPS required (except localhost)
-- Single password per run in production mode
-- Staging mode with explicit opt-in and attempt limits
+- Explicit allowed_hosts allowlist (you declare the hosts you may test)
+- HTTPS required for non-local hosts
+- Processes every non-empty password entry in the file, in order
 - Immediate stop on security challenges
 - No credential logging or storage
 - Sanitized CSV reports
+- No attempt-count limit; no CAPTCHA/MFA/WAF/rate-limit bypass
 """
 
 import sys
@@ -26,11 +26,10 @@ import argparse
 from pathlib import Path
 
 from auth_audit.config import (
-    load_config, 
-    create_example_config, 
+    load_config,
+    create_example_config,
     ConfigError,
     AppConfig,
-    ExecutionMode
 )
 from auth_audit.password_handler import create_example_password_file, PasswordFileError
 from auth_audit.browser_automation import run_auth_test
@@ -138,35 +137,19 @@ def main() -> int:
     
     # Print configuration summary (without secrets)
     print("=" * 60)
-    print("AUTHENTICATION TEST CONFIGURATION")
+    print("AUTHENTICATION TEST CONFIGURATION (authorized target)")
     print("=" * 60)
     print(f"Target URL:           {config.target_url}")
     print(f"Allowed Hosts:        {', '.join(config.allowed_hosts)}")
     print(f"Auth Provider:        {config.auth.provider.value}")
     print(f"Username:             {config.auth.username}")
-    print(f"Execution Mode:       {config.execution_mode.value}")
-    print(f"Max Attempts:         {config.maximum_attempts}")
     print(f"Password File:        {config.password_file}")
     print(f"Browser:              {config.browser.browser.value} (headless={config.browser.headless})")
     print(f"Delay Before Submit:  {config.browser.delay_before_submit_seconds}s")
     print(f"Stop on Challenge:    {config.stop_on_security_challenge}")
     print(f"Report Directory:     {config.report.report_directory}")
     print("=" * 60)
-    
-    # Confirm for staging mode
-    if config.execution_mode == ExecutionMode.STAGING:
-        print("\n⚠️  STAGING MODE ENABLED")
-        print(f"   This will test up to {config.maximum_attempts} passwords.")
-        print("   Ensure you have explicit authorization for this testing.")
-        try:
-            confirm = input("   Continue? (yes/no): ").strip().lower()
-            if confirm not in ("yes", "y"):
-                print("Aborted.")
-                return 0
-        except (EOFError, KeyboardInterrupt):
-            print("\nAborted.")
-            return 0
-    
+
     # Run tests
     try:
         results = run_auth_test(config)

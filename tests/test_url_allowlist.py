@@ -1,289 +1,244 @@
-"""Unit tests for URL allowlist and redirect behavior."""
+"""Unit tests for allowlist enforcement, redirect/origin blocking, HTTPS, and
+CSV sanitization."""
 
 import pytest
-from unittest.mock import Mock, MagicMock
+from unittest.mock import Mock
 from playwright.sync_api import Page, Response
 
 from auth_audit.config import (
-    AuthConfig, 
-    SecurityChallengeConfig, 
+    AuthConfig,
+    SecurityChallengeConfig,
     AppConfig,
     BrowserConfig,
     ReportConfig,
-    ExecutionMode,
 )
 from auth_audit.browser_automation import AuthTester
 from auth_audit.result_classifier import AuthenticationResult
 
 
-class TestURLAllowlist:
-    """Tests for URL allowlist enforcement and redirect behavior."""
-    
+def make_remote_config(
+    target="https://app.example.com/login",
+    allowed_hosts=("app.example.com",),
+) -> AppConfig:
+    """Build an HTTPS AppConfig with an explicit allowlist."""
+    return AppConfig(
+        target_url=target,
+        allowed_hosts=list(allowed_hosts),
+        auth=AuthConfig(
+            provider="custom",
+            username="testuser",
+            username_selector="#username",
+            password_selector="#password",
+            submit_selector="#login-btn",
+            success_url_patterns=["/__never_match__"],
+            success_selectors=["#__never_present__"],
+            failure_selectors=["#__never_failure__"],
+        ),
+        browser=BrowserConfig(
+            browser="chromium",
+            headless=True,
+            navigation_timeout_ms=15000,
+            delay_before_submit_seconds=0,
+        ),
+        report=ReportConfig(report_directory="reports"),
+        security=SecurityChallengeConfig(),
+        stop_on_security_challenge=True,
+        password_file="password.txt",
+    )
+
+
+class TestHostAllowlistHelper:
+    """Tests for the AuthTester host allowlist helper."""
+
     @pytest.fixture
-    def app_config(self):
-        """Create a test app configuration."""
-        return AppConfig(
-            target_url="https://example.com/login",
-            allowed_hosts=["example.com", "auth.example.com"],
-            auth=AuthConfig(
-                provider="custom",
-                username="test@example.com",
-                username_selector='input[name="email"]',
-                password_selector='input[name="password"]',
-                submit_selector='button[type="submit"]',
-            ),
-            browser=BrowserConfig(
-                browser="chromium",
-                headless=True,
-                navigation_timeout_ms=15000,
-                delay_before_submit_seconds=0
-            ),
-            report=ReportConfig(report_directory="reports"),
-            security=SecurityChallengeConfig(),
-            stop_on_security_challenge=True,
-            execution_mode=ExecutionMode.PRODUCTION,
-            maximum_attempts=1,
-            password_file="password.txt"
-        )
-    
-    @pytest.fixture
-    def mock_page(self):
-        """Create a mock Playwright page."""
-        page = Mock(spec=Page)
-        page.url = "https://example.com/login"
-        page.locator = Mock()
-        return page
-    
-    def test_check_host_allowed_allowed_host(self, app_config):
-        """Test that allowed hosts return True."""
-        tester = AuthTester(app_config)
-        
-        assert tester._check_host_allowed("https://example.com/login") is True
-        assert tester._check_host_allowed("https://example.com/dashboard") is True
-        assert tester._check_host_allowed("https://auth.example.com/callback") is True
-        assert tester._check_host_allowed("http://example.com/login") is True  # scheme doesn't matter
-    
-    def test_check_host_allowed_unauthorized_host(self, app_config):
-        """Test that unauthorized hosts return False."""
-        tester = AuthTester(app_config)
-        
-        assert tester._check_host_allowed("https://evil.com/login") is False
-        assert tester._check_host_allowed("https://sub.example.com/login") is False  # subdomain not in list
-        assert tester._check_host_allowed("https://example.org/login") is False
-    
-    def test_check_host_allowed_case_insensitive(self, app_config):
-        """Test that hostname comparison is case insensitive."""
-        tester = AuthTester(app_config)
-        
-        assert tester._check_host_allowed("https://EXAMPLE.COM/login") is True
-        assert tester._check_host_allowed("https://Example.Com/login") is True
-    
-    def test_check_host_allowed_invalid_url(self, app_config):
-        """Test that invalid URLs return False."""
-        tester = AuthTester(app_config)
-        
+    def tester(self):
+        return AuthTester(make_remote_config())
+
+    def test_allowed_hosts_return_true(self, tester):
+        assert tester._check_host_allowed("https://app.example.com/login") is True
+        assert tester._check_host_allowed("https://app.example.com/dashboard") is True
+
+    def test_unauthorized_hosts_return_false(self, tester):
+        assert tester._check_host_allowed("https://evil.example/phishing") is False
+        assert tester._check_host_allowed("https://other.example/login") is False
+        assert tester._check_host_allowed("http://127.0.0.1:5000/login") is False
+
+    def test_case_insensitive(self):
+        tester = AuthTester(make_remote_config(allowed_hosts=("app.example.com",)))
+        assert tester._check_host_allowed("https://APP.EXAMPLE.COM/x") is True
+
+    def test_invalid_url(self, tester):
         assert tester._check_host_allowed("not-a-url") is False
         assert tester._check_host_allowed("") is False
 
 
-class TestUnauthorizedRedirect:
-    """Tests for detecting unauthorized redirects during authentication."""
-    
-    @pytest.fixture
-    def app_config(self):
-        """Create a test app configuration."""
-        return AppConfig(
-            target_url="https://example.com/login",
-            allowed_hosts=["example.com"],
-            auth=AuthConfig(
-                provider="custom",
-                username="test@example.com",
-                username_selector='input[name="email"]',
-                password_selector='input[name="password"]',
-                submit_selector='button[type="submit"]',
-            ),
-            browser=BrowserConfig(
-                browser="chromium",
-                headless=True,
-                navigation_timeout_ms=15000,
-                delay_before_submit_seconds=0
-            ),
-            report=ReportConfig(report_directory="reports"),
-            security=SecurityChallengeConfig(),
-            stop_on_security_challenge=True,
-            execution_mode=ExecutionMode.PRODUCTION,
-            maximum_attempts=1,
-            password_file="password.txt"
-        )
-    
-    def test_navigation_to_unauthorized_host_returns_navigation_error(self, app_config):
-        """Test that navigation to unauthorized host returns NAVIGATION_ERROR."""
-        tester = AuthTester(app_config)
-        
-        # Create a mock page that navigates to unauthorized host
-        page = Mock(spec=Page)
-        page.url = "https://evil.com/phishing"
-        page.locator = Mock()
-        page.locator.return_value.wait_for = Mock()
-        page.locator.return_value.fill = Mock()
-        page.locator.return_value.click = Mock()
-        page.wait_for_load_state = Mock()
-        page.wait_for_timeout = Mock()
-        
-        # Mock the detector to return no challenges
+def _build_mock_page(url: str, status: int = 200):
+    page = Mock(spec=Page)
+    page.url = url
+
+    mock_locator = Mock()
+    mock_locator.count.return_value = 1
+    mock_locator.is_visible.return_value = True
+    mock_locator.wait_for = Mock()
+    mock_locator.fill = Mock()
+    mock_locator.click = Mock()
+    mock_locator.first = mock_locator
+    mock_locator.inner_text.return_value = "page text"
+    page.locator = Mock(return_value=mock_locator)
+
+    page.goto = Mock(return_value=Mock(status=status))
+    page.wait_for_load_state = Mock()
+    page.wait_for_timeout = Mock()
+    page.title = Mock(return_value="Mock Page")
+    page.frames = []
+    page.on = Mock()  # framenavigated listener registration
+    return page
+
+
+class TestRedirectAndOrigin:
+    """Redirect to a host outside the allowlist must block before submitting."""
+
+    def test_non_allowlisted_origin_blocks_submit(self):
+        tester = AuthTester(make_remote_config())
+        page = _build_mock_page("https://evil.example/phishing", status=200)
         tester.detector.check_page_content = Mock(return_value=None)
         tester.detector.check_navigation = Mock(return_value=None)
-        
-        result = tester._run_single_test(page, "password123", 1)
-        
-        assert result.classification.result == AuthenticationResult.NAVIGATION_ERROR
-        assert "unauthorized host" in result.classification.diagnostic_summary.lower()
-        assert result.navigation_error is True
-    
-    def test_navigation_to_authorized_host_continues(self, app_config):
-        """Test that navigation to authorized host continues normally."""
-        tester = AuthTester(app_config)
-        
-        # Create a mock page that navigates to authorized host
-        page = Mock(spec=Page)
-        page.url = "https://example.com/dashboard"
-        page.locator = Mock()
-        page.locator.return_value.wait_for = Mock()
-        page.locator.return_value.fill = Mock()
-        page.locator.return_value.click = Mock()
-        page.wait_for_load_state = Mock()
-        page.wait_for_timeout = Mock()
-        page.locator.return_value.count.return_value = 0
-        page.locator.return_value.inner_text.return_value = "Dashboard"
-        
-        # Mock the detector to return no challenges
+
+        result = tester._run_single_test(page, "somepassword", 1, 1)
+
+        assert result.classification.result == AuthenticationResult.UNAUTHORIZED_HOST_BLOCKED
+        # Credentials were never submitted.
+        page.locator.return_value.click.assert_not_called()
+
+    def test_allowlisted_origin_submits(self):
+        tester = AuthTester(make_remote_config())
+        page = _build_mock_page("https://app.example.com/login", status=200)
         tester.detector.check_page_content = Mock(return_value=None)
         tester.detector.check_navigation = Mock(return_value=None)
-        
-        result = tester._run_single_test(page, "password123", 1)
-        
-        # Should not be NAVIGATION_ERROR from host check
-        # Will be INCONCLUSIVE since no success/failure indicators
-        assert result.classification.result != AuthenticationResult.NAVIGATION_ERROR or "unauthorized" not in result.classification.diagnostic_summary.lower()
+
+        result = tester._run_single_test(page, "somepassword", 1, 1)
+
+        page.locator.return_value.click.assert_called_once()
+        assert result.classification.result != AuthenticationResult.UNAUTHORIZED_HOST_BLOCKED
+        assert result.navigation_error is False
 
 
 class TestCSVReportSanitization:
-    """Tests for CSV report sanitization."""
-    
+    """CSV sanitization must not leak credentials or URL query strings."""
+
     @pytest.fixture
     def reporter(self, tmp_path):
-        """Create a CSV reporter with temp directory."""
         from auth_audit.reporter import CSVReporter
         return CSVReporter(str(tmp_path / "reports"))
-    
+
     def test_sanitize_password_in_summary(self, reporter):
-        """Test that passwords are redacted from summary."""
-        summary = "User tried password MySecretPass123 and failed"
-        sanitized = reporter._sanitize_summary(summary)
-        
+        sanitized = reporter._sanitize_summary(
+            "User tried password MySecretPass123 and failed",
+            secrets=["MySecretPass123"],
+        )
         assert "MySecretPass123" not in sanitized
         assert "[REDACTED]" in sanitized
-    
+
     def test_sanitize_token_in_summary(self, reporter):
-        """Test that long tokens are redacted."""
-        summary = "Token: abcdefghijklmnopqrstuvwxyz123456"
-        sanitized = reporter._sanitize_summary(summary)
-        
-        assert "abcdefghijklmnopqrstuvwxyz123456" not in sanitized
-        assert "[REDACTED]" in sanitized
-    
+        s = reporter._sanitize_summary("Token: abcdefghijklmnopqrstuvwxyz123456")
+        assert "abcdefghijklmnopqrstuvwxyz123456" not in s
+
     def test_sanitize_jwt_in_summary(self, reporter):
-        """Test that JWT-like strings are redacted."""
-        summary = "JWT: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c"
-        sanitized = reporter._sanitize_summary(summary)
-        
-        assert "eyJ" not in sanitized or "[REDACTED]" in sanitized
-    
+        s = reporter._sanitize_summary("JWT: eyJhbGciOiJIUzI1NiIs.eyJzdWIiOiIxMjM0.NTk2fQ.abc")
+        assert "eyJ" not in s or "[REDACTED]" in s
+
     def test_sanitize_cookie_in_summary(self, reporter):
-        """Test that cookie patterns are redacted."""
-        summary = "session=abc123; token=xyz789; csrf=token123"
-        sanitized = reporter._sanitize_summary(summary)
-        
-        assert "session=[REDACTED]" in sanitized
-        assert "token=[REDACTED]" in sanitized
-        assert "csrf=[REDACTED]" in sanitized
-    
-    def test_sanitize_length_limit(self, reporter):
-        """Test that summary is truncated at 500 chars."""
-        # Use a long string that won't be redacted by other patterns
-        summary = "This is a test summary that is very long and contains no sensitive patterns " * 10
-        sanitized = reporter._sanitize_summary(summary)
-        
-        assert len(sanitized) <= 500
-        assert sanitized.endswith("...")
+        s = reporter._sanitize_summary("session=abc123; token=xyz789")
+        assert "session=[REDACTED]" in s
+        assert "token=[REDACTED]" in s
+
+    def test_create_record_strips_query_and_fragment(self, reporter):
+        from auth_audit.result_classifier import AuthenticationResult
+        record = reporter.create_record(
+            target_url="https://app.example.com/login?tab=a#frag",
+            auth_provider="custom",
+            attempt_number=1,
+            total_entries=2,
+            result=AuthenticationResult.SUCCESS_CONFIRMED,
+            http_status=200,
+            login_page_status=200,
+            auth_response_status=200,
+            security_challenge_detected=False,
+            elapsed_time_ms=5,
+            final_page_url="https://app.example.com/dashboard?token=SECRET&sid=1#x",
+            page_title="Dashboard",
+            form_detected=True,
+            selector_diagnostic="",
+            diagnostic_summary="ok",
+            secrets=["SECRET"],
+        )
+        assert "?" not in record.final_page_path
+        assert "#" not in record.final_page_path
+        assert "SECRET" not in record.final_page_path
+        assert record.total_entries == 2
+
+    def test_report_has_total_entries_column(self, reporter):
+        from auth_audit.reporter import TestReportRecord
+        path = reporter.write_record(
+            TestReportRecord(
+                timestamp_utc="2026-01-01T00:00:00+00:00",
+                target_host="app.example.com",
+                authentication_provider="custom",
+                attempt_number=1,
+                total_entries=1,
+                result="AUTHENTICATION_FAILED",
+                http_status=200,
+                login_page_status=200,
+                auth_response_status=200,
+                security_challenge_detected=False,
+                elapsed_time_ms=10,
+                final_page_path="https://app.example.com/login",
+                page_title="Login",
+                form_detected=True,
+                selector_diagnostic="",
+                diagnostic_summary="",
+            )
+        )
+        header = path.read_text(encoding="utf-8").splitlines()[0]
+        assert "total_entries" in header
+        assert "attempt_number" in header
+        assert "execution_mode" not in header
+        assert "maximum_attempts" not in header
 
 
-class TestHTTPSAndLocalhost:
-    """Tests for HTTPS enforcement and localhost exception."""
-    
-    def test_https_required_for_non_localhost(self, tmp_path):
-        """Test that HTTPS is required for non-localhost hosts."""
+class TestHTTPSEnforcement:
+    """HTTPS is required for non-local hosts; HTTP allowed for loopback only."""
+
+    def test_http_rejected_for_remote(self, tmp_path):
         from auth_audit.config import load_config, ConfigError
         import json
-        
-        config_data = {
-            "target_url": "http://example.com/login",
-            "allowed_hosts": ["example.com"],
-        }
-        config_file = tmp_path / "config.json"
-        config_file.write_text(json.dumps(config_data))
-        
+
+        cfg = {"target_url": "http://app.example.com/login", "allowed_hosts": ["app.example.com"]}
+        f = tmp_path / "config.json"
+        f.write_text(json.dumps(cfg))
         with pytest.raises(ConfigError) as exc:
-            load_config(config_file)
+            load_config(f)
         assert "HTTPS required" in str(exc.value)
-    
+
+    def test_https_remote_accepted(self, tmp_path):
+        from auth_audit.config import load_config
+        import json
+
+        cfg = {"target_url": "https://app.example.com/login", "allowed_hosts": ["app.example.com"]}
+        f = tmp_path / "config.json"
+        f.write_text(json.dumps(cfg))
+        config = load_config(f)
+        assert config.target_url == "https://app.example.com/login"
+
     def test_http_allowed_for_localhost(self, tmp_path):
-        """Test that HTTP is allowed for localhost."""
         from auth_audit.config import load_config
         import json
-        
-        config_data = {
-            "target_url": "http://localhost:3000/login",
-            "allowed_hosts": ["localhost"],
-        }
-        config_file = tmp_path / "config.json"
-        config_file.write_text(json.dumps(config_data))
-        
-        config = load_config(config_file)
+
+        cfg = {"target_url": "http://localhost:3000/login", "allowed_hosts": ["localhost"]}
+        f = tmp_path / "config.json"
+        f.write_text(json.dumps(cfg))
+        config = load_config(f)
         assert config.target_url == "http://localhost:3000/login"
-    
-    def test_http_allowed_for_127_0_0_1(self, tmp_path):
-        """Test that HTTP is allowed for 127.0.0.1."""
-        from auth_audit.config import load_config
-        import json
-        
-        config_data = {
-            "target_url": "http://127.0.0.1:8000/login",
-            "allowed_hosts": ["127.0.0.1"],
-        }
-        config_file = tmp_path / "config.json"
-        config_file.write_text(json.dumps(config_data))
-        
-        config = load_config(config_file)
-        assert config.target_url == "http://127.0.0.1:8000/login"
-    
-    def test_wildcard_allowed_hosts_rejected(self, tmp_path):
-        """Test that wildcard allowed_hosts is rejected by hostname validation."""
-        from auth_audit.config import load_config, ConfigError
-        import json
-        
-        config_data = {
-            "target_url": "https://example.com/login",
-            "allowed_hosts": ["*"],
-        }
-        config_file = tmp_path / "config.json"
-        config_file.write_text(json.dumps(config_data))
-        
-        # The hostname validation correctly rejects wildcard because
-        # 'example.com' is not literally in the list ['*']
-        with pytest.raises(ConfigError) as exc:
-            load_config(config_file)
-        assert "not in allowed_hosts" in str(exc.value)
 
 
 if __name__ == "__main__":

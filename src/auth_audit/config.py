@@ -7,6 +7,7 @@ files and environment variables.
 
 import json
 import os
+import ipaddress
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
@@ -21,6 +22,29 @@ class ConfigError(Exception):
     pass
 
 
+def is_local_hostname(hostname: str) -> bool:
+    """Return True for local loopback targets.
+
+    Recognizes ``localhost``, IPv6 loopback ``::1`` and the ``127.0.0.0/8``
+    range. Used only to exempt loopback development targets from the HTTPS
+    requirement; all other targets must be explicitly allowlisted and HTTPS.
+    """
+    if not hostname:
+        return False
+    host = hostname.lower()
+
+    if host == "localhost":
+        return True
+
+    # Try to interpret as an IP address (handles IPv4 and IPv6).
+    try:
+        addr = ipaddress.ip_address(host)
+    except ValueError:
+        return False
+
+    return addr.is_loopback
+
+
 class AuthenticationProvider(str, Enum):
     """Supported authentication providers."""
     CUSTOM = "custom"
@@ -30,22 +54,20 @@ class AuthenticationProvider(str, Enum):
     SUPABASE = "supabase"
 
 
-class ExecutionMode(str, Enum):
-    """Execution modes for the tool."""
-    PRODUCTION = "production"
-    STAGING = "staging"
-
-
 class ResultCategory(str, Enum):
     """Result classification categories."""
     SUCCESS_CONFIRMED = "SUCCESS_CONFIRMED"
     AUTHENTICATION_FAILED = "AUTHENTICATION_FAILED"
+    LOGIN_PAGE_NOT_FOUND = "LOGIN_PAGE_NOT_FOUND"
+    SELECTOR_NOT_FOUND = "SELECTOR_NOT_FOUND"
+    FORM_NOT_READY = "FORM_NOT_READY"
     STOPPED_SECURITY_CHALLENGE = "STOPPED_SECURITY_CHALLENGE"
     STOPPED_RATE_LIMIT = "STOPPED_RATE_LIMIT"
     STOPPED_ACCESS_DENIED = "STOPPED_ACCESS_DENIED"
     INCONCLUSIVE = "INCONCLUSIVE"
     CONFIGURATION_ERROR = "CONFIGURATION_ERROR"
     NAVIGATION_ERROR = "NAVIGATION_ERROR"
+    UNAUTHORIZED_HOST_BLOCKED = "UNAUTHORIZED_HOST_BLOCKED"
 
 
 class BrowserType(str, Enum):
@@ -144,6 +166,16 @@ class AuthConfig(BaseModel):
         ],
         description="CSS selectors for authentication failure messages"
     )
+    success_on_navigation_without_failure: bool = Field(
+        default=False,
+        description=(
+            "Operator-defined success signal for apps where the login error "
+            "element is the sole correctness indicator. When enabled, a submit "
+            "that navigates off the login page with NO failure indicator is "
+            "classified as SUCCESS_CONFIRMED. A redirect that stays on the "
+            "login page (or shows a failure element) is never success."
+        )
+    )
 
 
 class BrowserConfig(BaseModel):
@@ -191,17 +223,9 @@ class AppConfig(BaseModel):
         default=True,
         description="Stop immediately when security challenge detected"
     )
-    execution_mode: ExecutionMode = Field(
-        default=ExecutionMode.PRODUCTION,
-        description="Execution mode: production or staging"
-    )
-    maximum_attempts: int = Field(
-        default=1,
-        description="Maximum authentication attempts (staging mode only)"
-    )
     password_file: str = Field(
         default="password.txt",
-        description="Path to password file"
+        description="Path to password file (every non-empty line is processed)"
     )
 
     @field_validator("target_url")
@@ -223,41 +247,28 @@ class AppConfig(BaseModel):
             raise ValueError("allowed_hosts must contain at least one host")
         return [host.lower() for host in v]
 
-    @field_validator("execution_mode")
-    @classmethod
-    def validate_execution_mode(cls, v: ExecutionMode) -> ExecutionMode:
-        """Validate execution mode."""
-        if v not in (ExecutionMode.PRODUCTION, ExecutionMode.STAGING):
-            raise ValueError(f"execution_mode must be 'production' or 'staging', got '{v}'")
-        return v
-
-    @field_validator("maximum_attempts")
-    @classmethod
-    def validate_maximum_attempts(cls, v: int) -> int:
-        """Validate maximum attempts."""
-        if v < 1:
-            raise ValueError("maximum_attempts must be at least 1")
-        if v > 10:
-            raise ValueError("maximum_attempts cannot exceed 10")
-        return v
-
     @model_validator(mode="after")
     def validate_hostname_match(self) -> "AppConfig":
-        """Validate that target URL hostname is in allowed_hosts."""
+        """Validate that target host is allowlisted and HTTPS is enforced.
+
+        The operator declares the hosts they are authorized to test via
+        ``allowed_hosts``. HTTPS is required for every non-local host; HTTP is
+        permitted only for explicit localhost development targets.
+        """
         parsed = urlparse(self.target_url)
         hostname = parsed.hostname.lower() if parsed.hostname else ""
-        
+
         if hostname not in self.allowed_hosts:
             raise ValueError(
                 f"Target hostname '{hostname}' is not in allowed_hosts: {self.allowed_hosts}"
             )
-        
-        # Enforce HTTPS unless localhost
-        if parsed.scheme != "https" and hostname not in ("localhost", "127.0.0.1", "::1"):
+
+        # Enforce HTTPS for non-local targets; allow HTTP only for loopback.
+        if parsed.scheme != "https" and not is_local_hostname(hostname):
             raise ValueError(
-                f"HTTPS required for non-localhost hosts. Got scheme: {parsed.scheme}"
+                f"HTTPS required for non-local host '{hostname}'. Got scheme: {parsed.scheme}"
             )
-        
+
         return self
 
 
@@ -300,31 +311,26 @@ def create_example_config(output_path: str | Path) -> None:
         output_path: Path where the example config should be written.
     """
     example = {
-        "target_url": "https://your-app.example.com/login",
+        "target_url": "https://your-authorized-app.example.com/login",
         "allowed_hosts": [
-            "your-app.example.com",
+            "your-authorized-app.example.com",
             "localhost"
         ],
         "auth": {
             "provider": "custom",
-            "username": "test-account@example.com",
+            "username": "YOUR_DEDICATED_TEST_USERNAME",
             "username_selector": "input[name=\"email\"]",
             "password_selector": "input[name=\"password\"]",
             "submit_selector": "button[type=\"submit\"]",
             "success_url_patterns": [
-                "/dashboard",
-                "/home",
-                "/app"
+                "/dashboard"
             ],
             "success_selectors": [
-                "[data-testid=\"user-menu\"]",
-                ".user-profile",
-                "a[href*=\"logout\"]"
+                "[data-testid=\"user-menu\"]"
             ],
             "failure_selectors": [
-                "[data-testid=\"error-message\"]",
-                ".auth-error",
-                ".alert-danger"
+                "[data-testid=\"login-error\"]",
+                ".error-message"
             ]
         },
         "browser": {
@@ -370,8 +376,6 @@ def create_example_config(output_path: str | Path) -> None:
             ]
         },
         "stop_on_security_challenge": True,
-        "execution_mode": "production",
-        "maximum_attempts": 1,
         "password_file": "password.txt"
     }
     
