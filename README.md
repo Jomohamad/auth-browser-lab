@@ -41,6 +41,7 @@ intentionally removed. The whole password file is processed in order.
 ## Quick Start (Windows 11 / PowerShell)
 
 ```powershell
+git clone https://github.com/Jomohamad/auth-browser-lab.git
 cd F:\main\My_Projects\auth-browser-lab
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
