@@ -1,3 +1,4 @@
+# Signed by JOE
 """Unit tests for result classification and security challenge detection."""
 
 import pytest

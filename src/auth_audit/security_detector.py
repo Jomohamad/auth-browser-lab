@@ -1,3 +1,4 @@
+# Signed by JOE
 """Security challenge detection for authentication testing.
 
 This module detects various security challenges, rate limits, CAPTCHAs,

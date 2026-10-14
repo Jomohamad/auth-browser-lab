@@ -1,3 +1,4 @@
+# Signed by JOE
 """Unit tests for full password-file processing (no attempt limit)."""
 
 import pytest

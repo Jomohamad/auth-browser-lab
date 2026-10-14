@@ -1,3 +1,4 @@
+# Signed by JOE
 """Unit tests for configuration validation, allowlist, and HTTPS enforcement."""
 
 import json

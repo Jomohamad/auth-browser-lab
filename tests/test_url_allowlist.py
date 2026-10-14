@@ -1,3 +1,4 @@
+# Signed by JOE
 """Unit tests for allowlist enforcement, redirect/origin blocking, HTTPS, and
 CSV sanitization."""
 

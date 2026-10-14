@@ -1,3 +1,4 @@
+# Signed by JOE
 """Regression tests: stop the loop on confirmed success, never infer success
 from a 302, keep inconclusive as inconclusive, and never leak credentials.
 

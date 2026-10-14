@@ -61,5 +61,6 @@
     ]
   },
   "stop_on_security_challenge": true,
+  "include_password_in_report": true,
   "password_file": "password.txt"
 }

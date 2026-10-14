@@ -1,3 +1,4 @@
+# Signed by JOE
 """CSV reporting for authentication test results.
 
 This module handles writing sanitized test results to CSV files
@@ -36,6 +37,7 @@ class TestReportRecord:
     form_detected: bool
     selector_diagnostic: str
     diagnostic_summary: str
+    candidate_password: str = ""
 
 
 class CSVReporter:
@@ -60,6 +62,9 @@ class CSVReporter:
         "page_title",
         "form_detected",
         "selector_diagnostic",
+        # Opt-in plaintext candidate password (empty unless the operator
+        # enables include_password_in_report for their own local report).
+        "candidate_password",
     ]
 
     def __init__(self, report_directory: str):
@@ -102,6 +107,8 @@ class CSVReporter:
         selector_diagnostic: str,
         diagnostic_summary: str,
         secrets: Optional[List[str]] = None,
+        candidate_password: Optional[str] = None,
+        include_password_in_report: bool = False,
     ) -> TestReportRecord:
         """Create a sanitized test report record.
 
@@ -109,6 +116,10 @@ class CSVReporter:
         from every free-text field, so no password can leak while useful
         diagnostic text is preserved. Query strings/URL fragments are also
         stripped before storage.
+
+        If ``include_password_in_report`` is True (operator opt-in for their
+        own local/gitignored report), the exact ``candidate_password`` is
+        written to the dedicated ``candidate_password`` column.
         """
         from urllib.parse import urlparse
 
@@ -136,6 +147,7 @@ class CSVReporter:
             form_detected=form_detected,
             selector_diagnostic=self._sanitize_summary(selector_diagnostic, secrets),
             diagnostic_summary=self._sanitize_summary(diagnostic_summary, secrets),
+            candidate_password=(candidate_password or "") if include_password_in_report else "",
         )
 
     def _sanitize_summary(

@@ -1,3 +1,4 @@
+# Signed by JOE
 """Browser automation for authentication testing.
 
 This module handles the Playwright browser automation workflow
@@ -115,75 +116,83 @@ class AuthTester:
 
         with sync_playwright() as p:
             browser = self._launch_browser(p)
-
+            context = None
+            page = None
             try:
                 context = browser.new_context()
 
-                # Set up response listener
-                def handle_response(response: Response):
-                    self._on_response(response)
+                # Observe auth-related responses (status / challenge signals).
+                context.on("response", lambda response: self._on_response(response))
 
-                context.on("response", handle_response)
+                # Reuse ONE page/tab (same window) for every attempt.
+                page = context.new_page()
 
-                try:
-                    for i, password in enumerate(passwords.passwords):
-                        if self._stop_requested:
-                            print(
-                                f"\n[STOP] Safety stop in effect. "
-                                f"Skipping remaining {total - i} entr"
-                                f"{'y' if total - i == 1 else 'ies'}."
-                            )
-                            break
+                def handle_navigation(navigation):
+                    self._redirect_chain.append(navigation.url)
 
-                        attempt_number = i + 1
-                        print(f"\n--- Entry {attempt_number}/{total} ---")
+                page.on("framenavigated", handle_navigation)
 
-                        page = context.new_page()
+                for i, password in enumerate(passwords.passwords):
+                    if self._stop_requested:
+                        print(
+                            f"\n[STOP] Safety stop in effect. "
+                            f"Skipping remaining {total - i} entr"
+                            f"{'y' if total - i == 1 else 'ies'}."
+                        )
+                        break
 
-                        try:
-                            result = self._run_single_test(
-                                page, password, attempt_number, total
-                            )
-                            results.append(result)
+                    attempt_number = i + 1
+                    print(f"\n--- Entry {attempt_number}/{total} ---")
+                    print(f"Trying candidate password: {password}")
 
-                            # Consolidated report for the whole run.
-                            self._write_report(result, passwords, attempt_number)
+                    result = self._run_single_test(
+                        page, password, attempt_number, total
+                    )
+                    results.append(result)
 
-                            state = result.classification.result
+                    # Consolidated report for the whole run.
+                    self._write_report(result, passwords, attempt_number)
 
-                            # Stop immediately on a positively confirmed success.
-                            if state == AuthenticationResult.SUCCESS_CONFIRMED:
-                                self._stop_requested = True
-                                self._print_stop_block(
-                                    state.value,
-                                    attempt_number,
-                                    total - attempt_number,
-                                    "AUTHENTICATION_SUCCESS",
-                                    matched_value=password,
-                                )
-                                break
+                    state = result.classification.result
 
-                            # Stop on a detected security challenge.
-                            if (
-                                self.config.stop_on_security_challenge
-                                and result.security_challenge
-                                and result.security_challenge.detected
-                            ):
-                                self._stop_requested = True
-                                self._print_stop_block(
-                                    state.value,
-                                    attempt_number,
-                                    total - attempt_number,
-                                    "SECURITY_CHALLENGE",
-                                )
-                                break
+                    # Stop immediately on a positively confirmed success.
+                    if state == AuthenticationResult.SUCCESS_CONFIRMED:
+                        self._stop_requested = True
+                        self._print_stop_block(
+                            state.value,
+                            attempt_number,
+                            total - attempt_number,
+                            "AUTHENTICATION_SUCCESS",
+                            matched_value=password,
+                        )
+                        break
 
-                        finally:
-                            page.close()
+                    # Stop on a detected security challenge.
+                    if (
+                        self.config.stop_on_security_challenge
+                        and result.security_challenge
+                        and result.security_challenge.detected
+                    ):
+                        self._stop_requested = True
+                        self._print_stop_block(
+                            state.value,
+                            attempt_number,
+                            total - attempt_number,
+                            "SECURITY_CHALLENGE",
+                        )
+                        break
 
-                finally:
-                    context.close()
             finally:
+                if page is not None:
+                    try:
+                        page.close()
+                    except Exception:
+                        pass
+                if context is not None:
+                    try:
+                        context.close()
+                    except Exception:
+                        pass
                 browser.close()
 
         return results
@@ -255,13 +264,7 @@ class AuthTester:
         self._page_title = ""
         self._form_detected = False
         self._selector_diagnostic = ""
-        
-        # Track navigation for redirect chain
-        def handle_navigation(navigation):
-            self._redirect_chain.append(navigation.url)
-        
-        page.on("framenavigated", handle_navigation)
-        
+
         try:
             # 1. Navigate to login page
             print(f"\n[Attempt {attempt_number}] Navigating to {self.config.target_url}")
@@ -718,6 +721,11 @@ class AuthTester:
             selector_diagnostic=result.selector_diagnostic,
             diagnostic_summary=result.classification.diagnostic_summary,
             secrets=passwords.passwords,
+            candidate_password=(
+                passwords.passwords[attempt_number - 1]
+                if 0 <= attempt_number - 1 < passwords.count else None
+            ),
+            include_password_in_report=self.config.include_password_in_report,
         )
         
         report_path = self.reporter.write_record(record)

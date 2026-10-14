@@ -1,3 +1,4 @@
+# Signed by JOE
 """Authentication Audit Tool - Core Modules
 
 This package contains the core modules for the authentication testing tool:

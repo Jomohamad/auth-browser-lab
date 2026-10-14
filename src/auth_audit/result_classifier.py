@@ -1,3 +1,4 @@
+# Signed by JOE
 """Result classification for authentication testing outcomes.
 
 This module provides explicit result classification based on observed

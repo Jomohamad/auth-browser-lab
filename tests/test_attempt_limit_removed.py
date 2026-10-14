@@ -1,3 +1,4 @@
+# Signed by JOE
 """Guard test: the obsolete 'Max Attempts' setting must not exist anywhere.
 
 Scans the project's own source/config/docs files (excluding the virtualenv,

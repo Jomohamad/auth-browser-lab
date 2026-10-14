@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Signed by JOE
 """Authorized Authentication Testing Tool
 
 A safe, configurable tool for testing authentication on your own Next.js/React

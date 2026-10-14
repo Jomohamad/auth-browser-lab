@@ -1,3 +1,4 @@
+# Signed by JOE
 """Configuration management for the authentication testing tool.
 
 This module handles loading, validating, and providing access to the
@@ -226,6 +227,14 @@ class AppConfig(BaseModel):
     password_file: str = Field(
         default="password.txt",
         description="Path to password file (every non-empty line is processed)"
+    )
+    include_password_in_report: bool = Field(
+        default=False,
+        description=(
+            "Operator opt-in (for their own local, gitignored report only): "
+            "when True the candidate password is written to a dedicated CSV "
+            "column. Disabled by default so reports stay secret-free."
+        )
     )
 
     @field_validator("target_url")

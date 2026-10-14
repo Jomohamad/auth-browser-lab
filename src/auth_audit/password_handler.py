@@ -1,3 +1,4 @@
+# Signed by JOE
 """Safe password-file handling for the local authentication tester.
 
 Reads a UTF-8 ``.txt`` file of candidate passwords used against a *local
