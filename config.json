@@ -21,7 +21,7 @@
   "browser": {
     "browser": "chromium",
     "headless": false,
-    "navigation_timeout_ms": 6000,
+    "navigation_timeout_ms": 1000,
     "delay_before_submit_seconds": 0
   },
   "report": {
