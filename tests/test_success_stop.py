@@ -28,7 +28,7 @@ from auth_audit.result_classifier import (
 from auth_audit.security_detector import SecurityChallengeResult
 
 
-def make_config(report_dir, success_on_nav=False):
+def make_config(report_dir, success_on_nav=False, include_pw_in_report=False):
     return AppConfig(
         target_url="https://app.example.com/login",
         allowed_hosts=["app.example.com"],
@@ -52,6 +52,7 @@ def make_config(report_dir, success_on_nav=False):
         report=ReportConfig(report_directory=str(report_dir)),
         security=SecurityChallengeConfig(),
         stop_on_security_challenge=True,
+        include_password_in_report=include_pw_in_report,
         password_file="password.txt",
     )
 
@@ -294,6 +295,42 @@ def test_report_redacts_password(tmp_path):
     content = report.read_text(encoding="utf-8")
     assert secret not in content
     assert "[REDACTED]" in content
+
+
+def test_report_includes_password_when_flag_enabled(tmp_path):
+    """With include_password_in_report=True the candidate is in the report."""
+    tester = AuthTester(make_config(tmp_path, include_pw_in_report=True))
+    secret = "RealWorkingPw_42"
+    passwords = PasswordFileResult(passwords=[secret], count=1, source_path="password.txt")
+    result = make_result(
+        AuthenticationResult.SUCCESS_CONFIRMED,
+        diagnostic_summary=f"login succeeded with {secret}",
+    )
+    tester._write_report(result, passwords, 1)
+
+    report = tmp_path / f"auth-test-{result_today()}.csv"
+    content = report.read_text(encoding="utf-8")
+    # Header exposes the dedicated column and the exact value is present.
+    assert "candidate_password" in content.splitlines()[0]
+    assert secret in content
+
+
+def test_report_omits_password_when_flag_disabled(tmp_path):
+    """Default (flag off) keeps the candidate out of the report."""
+    tester = AuthTester(make_config(tmp_path, include_pw_in_report=False))
+    secret = "ShouldNotAppear_99"
+    passwords = PasswordFileResult(passwords=[secret], count=1, source_path="password.txt")
+    result = make_result(
+        AuthenticationResult.AUTHENTICATION_FAILED,
+        diagnostic_summary=f"tried {secret} and failed",
+    )
+    tester._write_report(result, passwords, 1)
+
+    report = tmp_path / f"auth-test-{result_today()}.csv"
+    content = report.read_text(encoding="utf-8")
+    assert secret not in content
+    # Column still exists (schema stable) but the value is empty.
+    assert "candidate_password" in content.splitlines()[0]
 
 
 def result_today():
