@@ -1,0 +1,35 @@
+{
+  "target_url": "https://your-app.example.com/login",
+  "allowed_hosts": [
+    "your-app.example.com",
+    "localhost"
+  ],
+  "authentication_provider": "custom",
+  "username": "test-account@example.com",
+  "username_selector": "input[name=\"email\"]",
+  "password_selector": "input[name=\"password\"]",
+  "submit_selector": "button[type=\"submit\"]",
+  "success_url_patterns": [
+    "/dashboard",
+    "/home",
+    "/app"
+  ],
+  "success_selectors": [
+    "[data-testid=\"user-menu\"]",
+    ".user-profile",
+    "a[href*=\"logout\"]"
+  ],
+  "failure_selectors": [
+    "[data-testid=\"error-message\"]",
+    ".auth-error",
+    ".alert-danger"
+  ],
+  "delay_before_submit_seconds": 3,
+  "navigation_timeout_ms": 15000,
+  "browser": "chromium",
+  "headless": false,
+  "report_directory": "reports",
+  "stop_on_security_challenge": true,
+  "execution_mode": "production",
+  "maximum_attempts": 1
+}

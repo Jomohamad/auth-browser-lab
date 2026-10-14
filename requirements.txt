@@ -1,0 +1,16 @@
+# Core dependencies
+playwright>=1.40.0
+
+# For configuration and validation
+pydantic>=2.5.0
+pydantic-settings>=2.1.0
+
+# For CLI argument parsing
+click>=8.1.0
+
+# For testing
+pytest>=7.4.0
+pytest-mock>=3.12.0
+
+# For type hints
+typing-extensions>=4.8.0
