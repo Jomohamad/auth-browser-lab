@@ -118,10 +118,27 @@ class PageScreen(BaseScreen):
 
     def _build_actions(self):
         yield SeparatorEntry("actions-sep", SEP_MAJOR)
-        yield ActionEntry("save", "[Save]")
-        yield ActionEntry("reset-page", "[Reset page]")
-        yield ActionEntry("reset-all", "[Reset all]")
-        yield ActionEntry("back", "[Back]")
+        yield ActionEntry("save", "(S) Save", can_focus=True)
+        yield ActionEntry("reset-page", "(R) Reset page", can_focus=True)
+        yield ActionEntry("reset-all", "(A) Reset all", can_focus=True)
+        yield ActionEntry("back", "(Esc) Back", can_focus=True)
+
+    # -- keyboard shortcuts for action buttons ------------------------------
+    BINDINGS = [
+        ("s", "save", "Save"),
+        ("r", "reset-page", "Reset page"),
+        ("a", "reset-all", "Reset all"),
+        ("escape", "back", "Back"),
+    ]
+
+    def action_save(self) -> None:
+        self._do_save()
+
+    def action_reset_page(self) -> None:
+        self._reset_page()
+
+    def action_reset_all(self) -> None:
+        self._reset_all()
 
     def action_back(self) -> None:
         # Escape / Backspace -> return to the previous screen.
@@ -229,7 +246,19 @@ class MainMenuScreen(BaseScreen):
 
     def _build_actions(self):
         yield SeparatorEntry("actions-sep", SEP_MAJOR)
-        yield ActionEntry("exit", "[Exit]")
+        yield ActionEntry("exit", "(X) Exit", can_focus=True)
+
+    # -- keyboard shortcuts -------------------------------------------------
+    BINDINGS = [
+        ("x", "exit", "Exit"),
+        ("escape", "back", "Back"),
+    ]
+
+    def action_exit(self) -> None:
+        self.app_ref.request_exit()
+
+    def action_back(self) -> None:
+        self.app_ref.request_exit()
 
     def _on_body_entry_activated(self, key: str) -> None:
         if key == "exit":
@@ -240,9 +269,6 @@ class MainMenuScreen(BaseScreen):
     def _on_action_activated(self, key: str) -> None:
         if key == "exit":
             self.app_ref.request_exit()
-
-    def action_back(self) -> None:
-        self.app_ref.request_exit()
 
 
 # ---------------------------------------------------------------------------
@@ -264,15 +290,11 @@ class OverviewScreen(PageScreen):
 
     def _build_actions(self):
         yield SeparatorEntry("actions-sep", SEP_MAJOR)
-        yield ActionEntry("back", "[Back]")
+        yield ActionEntry("back", "(Esc) Back", can_focus=True)
 
     def _on_body_entry_activated(self, key: str) -> None:
         # Overview body entries are read-only; activation does nothing.
         pass
-
-    def _on_action_activated(self, key: str) -> None:
-        if key == "back":
-            self.app_ref.pop_screen()
 
     @staticmethod
     def _overview_lines(app) -> list:

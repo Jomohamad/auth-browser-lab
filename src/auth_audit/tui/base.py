@@ -36,6 +36,8 @@ from .entries import (
     SEP_MINOR,
     separator,
     ListPanel,
+    StaticEntry,
+    _ActionActivated,
 )
 
 APP_TITLE = "AUTH BROWSER LAB"
@@ -60,6 +62,7 @@ class BaseScreen(Screen):
     #subtitle { height: auto; color: $text; }
     #status { height: auto; color: $text; }
     #body { height: 1fr; }
+    #actions { dock: bottom; height: auto; }
     #footer { height: auto; color: $text-muted; }
     """
 
@@ -88,6 +91,10 @@ class BaseScreen(Screen):
         action keys such as Save / Back / Exit).
         """
         entries = list(self._build_body_entries()) + list(self._build_actions())
+        if not entries:
+            entries.append(
+                StaticEntry("empty-placeholder", "> No settings on this page.")
+            )
         return ListPanel(
             entries,
             selected_index=0,
@@ -111,6 +118,11 @@ class BaseScreen(Screen):
     def _on_entry_selected(self, key: str) -> None:
         """Handle the selection moving to a different entry."""
         pass
+
+    def on__action_activated(self, event: "_ActionActivated") -> None:
+        """Handle activation of standalone action entries (Enter / click)."""
+        event.stop()
+        self._on_action_activated(event.key)
 
     def action_back(self):  # pragma: no cover - overridden by subclasses
         """Escape / Backspace behaviour."""

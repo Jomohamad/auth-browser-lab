@@ -15,6 +15,7 @@ from __future__ import annotations
 from typing import Callable, List, Optional
 
 from textual.containers import ScrollableContainer
+from textual.message import Message
 from textual.widget import Widget
 from textual.widgets import Static
 
@@ -62,6 +63,7 @@ class Entry(Static, can_focus=False):
         *,
         selected: bool = False,
         disabled: bool = False,
+        can_focus: bool = False,
     ) -> None:
         # Textual ids must be simple identifiers; dots/slashes in spec paths
         # are sanitized for the DOM id while the original key is preserved.
@@ -72,6 +74,7 @@ class Entry(Static, can_focus=False):
         self.selected = selected
         self.disabled = disabled
         self._panel: Optional["ListPanel"] = None
+        self.can_focus = can_focus
 
     def dom_id(self) -> str:
         return f"entry-{self.key.replace('.', '__').replace('/', '_')}"
@@ -104,6 +107,24 @@ class Entry(Static, can_focus=False):
         """Mouse click: select this entry, or activate if already selected."""
         if self._panel is not None:
             self._panel.on_entry_clicked(self)
+        else:
+            # Standalone action button: activate on click.
+            self._do_activate()
+
+    def on_key(self, event) -> None:  # type: ignore[override]
+        """Keyboard: Enter / Space activate a focused standalone entry."""
+        if event.key in ("enter", "space"):
+            event.stop()
+            self._do_activate()
+
+    def _do_activate(self) -> None:
+        if self.disabled:
+            return
+        if self._panel is not None:
+            self._panel.on_entry_clicked(self)
+        else:
+            # Standalone action button: post activation message to the screen.
+            self.app.post_message(_ActionActivated(self.key))
 
 
 class MenuEntry(Entry):
@@ -256,3 +277,11 @@ class ListPanel(ScrollableContainer, can_focus=True):
             if self._on_select is not None:
                 self._on_select(entry.key)
         self.focus()
+
+
+class _ActionActivated(Message):
+    """Posted by a standalone action entry when activated (Enter / click)."""
+
+    def __init__(self, key: str) -> None:
+        super().__init__()
+        self.key = key
