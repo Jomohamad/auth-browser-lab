@@ -74,7 +74,7 @@ python tester.py --help
 
 | Command | Purpose |
 |---------|---------|
-| `--help` | Full help page: description, all commands, examples, config locations, dependency commands, browser/TUI options, safe-execution rules, exit codes, troubleshooting. |
+| `--help` | Show all available commands and options. |
 | `--version` | Print the application version. |
 | `--settings` | Launch the interactive settings TUI (**never** starts a browser or an auth test). |
 | `--doctor` | Environment/configuration diagnostics (no changes). |
@@ -102,8 +102,8 @@ python tester.py --doctor
 # Interactive settings editor (no browser)
 python tester.py --settings
 
-# Run against the local mock (headless), using a synthetic credential
-python tester.py --config config.json --headless --password synthetic-fixture-pw
+# Run against your authorized target (headless)
+python tester.py --config config.json --headless
 
 # Check for outdated dependencies (read-only)
 python tester.py --check-updates
@@ -163,8 +163,7 @@ selected-item marker, shortcut hints, and a bottom action bar with
    Clerk, and Supabase (each has a different form/navigation shape).
 4. **Browser** — engine, headless, viewport, navigation timeout, delays, and the
    Windows console **always-on-top** toggle.
-5. **Execution** — local-mock settings, `stop_on_security_challenge`,
-   `password_file`.
+5. **Execution** — `stop_on_security_challenge`, `password_file`.
 6. **Reporting** — report directory, timestamp format, log level, retention,
    diagnostic verbosity, and the (off‑by‑default) `include_password_in_report`.
 7. **Dependencies & Tools** — installed versions, check for compatible updates,
@@ -203,22 +202,6 @@ backup** first. You can reset a page or the whole config to safe defaults.
 
 ---
 
-## Running the local mock application
-
-If you want an isolated local target for integration testing, run the bundled
-dependency-free mock server:
-
-```powershell
-python -m mock_app --port 8765
-```
-
-It serves a login form at `http://127.0.0.1:8765/login` with synthetic
-fixture credentials (`fixture_user` / `synthetic-fixture-pw`) and success path
-`/app/dashboard`. Point `config.json` at `http://127.0.0.1:8765/login` with
-`allowed_hosts: ["127.0.0.1"]` to use it. This is optional — public targets
-work once allowlisted.
----
-
 ## Browser installation & troubleshooting
 
 | Symptom | Likely cause / fix |
@@ -253,18 +236,13 @@ status in one place.
 
 ```powershell
 python -m pytest tests -q
-
-# Opt-in Playwright ↔ local-mock integration tests (launch real Chromium):
-$env:AUTH_LAB_MOCK_FLOW = "1"
-python -m pytest tests\test_local_mock_flow.py -q
-Remove-Item Env:AUTH_LAB_MOCK_FLOW
 ```
 
 The suite covers CLI behavior, the settings schema and atomic/secret-free config
 persistence, dependency diagnostics (network/browser/pip are mocked), the
 Windows always-on-top helper (OS mocked), the safety target policy, CSV
-sanitization, and the local mock's deterministic responses. Unit tests never
-contact a live public website.
+sanitization, and the result classifier. Unit tests never contact a live
+website.
 
 ---
 
@@ -346,10 +324,6 @@ Every field below is editable in the settings TUI (see also
     "retention_days": 0,                         // 0 = keep all
     "diagnostic_verbosity": "normal"             // minimal|normal|verbose
   },
-  "mock": {
-    "enabled": true, "host": "127.0.0.1", "port": 8765,
-    "correct_username": "fixture_user", "success_path": "/app/dashboard"
-  },
   "security": {
     "http_status_codes": [403, 429],
     "blocking_text_patterns": ["rate limit", "captcha", "account locked"],
@@ -357,9 +331,8 @@ Every field below is editable in the settings TUI (see also
     "mfa_selectors": [".mfa-challenge", ".two-factor"]
   },
   "stop_on_security_challenge": true,           // always stop on challenges
-  "allow_public_functional_check": false,       // opt-in: remote single-cred check
   "always_on_top": false,                        // Windows console (best-effort)
-  "password_file": "password.txt",               // candidate list (local mock only)
+  "password_file": "password.txt",               // candidate list
   "include_password_in_report": false            // off => reports stay secret-free
 }
 ```
@@ -373,7 +346,7 @@ auth-browser-lab/
 ├── tester.py                  # CLI entry point (thin shim -> auth_audit.cli)
 ├── config.json                # Your config (gitignored)
 ├── config.example.json        # Example configuration
-├── password.txt               # Candidate list (gitignored; local mock only)
+├── password.txt               # Candidate list (gitignored)
 ├── password.txt.example
 ├── requirements.txt
 ├── pyproject.toml
@@ -394,7 +367,8 @@ auth-browser-lab/
 │   ├── dependency_manager.py  # Dependency/tool diagnostics + controlled updates
 │   ├── windows_console.py     # Windows always-on-top (best-effort)
 │   ├── cli.py                 # argparse CLI + exit codes
-│   └── settings_tui.py        # Textual settings TUI
+│   ├── settings_tui.py        # Textual settings TUI
+│   └── tui/                   # Textual screen components (base, pages, entries, confirm, field_edit)
 └── tests/
     ├── test_cli.py
     ├── test_config.py
@@ -403,14 +377,12 @@ auth-browser-lab/
     ├── test_settings_tui.py
     ├── test_dependencies.py
     ├── test_windows_console.py
-    ├── test_policy.py
     ├── test_result_classification.py
     ├── test_url_allowlist.py
     ├── test_success_stop.py
     ├── test_password_file.py
     ├── test_attempt_limit_removed.py
-    ├── test_credentials.py
-    └── test_local_mock_flow.py
+    └── test_credentials.py
 ```
 
 ---

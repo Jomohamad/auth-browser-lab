@@ -19,5 +19,5 @@ pytest-mock>=3.12.0
 # Optional: interactive settings TUI (`python tester.py --settings`)
 #   python -m pip install -e ".[tui]"
 # ---------------------------------------------------------------------------
-# textual>=0.80
-# rich>=13.7
+textual>=0.80
+rich>=13.7
