@@ -20,15 +20,25 @@
   },
   "browser": {
     "browser": "chromium",
-    "headless": false,
+    "headless": true,
     "navigation_timeout_ms": 1000,
-    "delay_before_submit_seconds": 0
+    "delay_before_submit_seconds": 0,
+    "inter_entry_delay_seconds": 0,
+    "viewport_width": 1280,
+    "viewport_height": 720
   },
   "report": {
-    "report_directory": "reports"
+    "report_directory": "reports",
+    "timestamp_format": "%Y-%m-%dT%H:%M:%S%z",
+    "log_level": "INFO",
+    "retention_days": 0,
+    "diagnostic_verbosity": "normal"
   },
   "security": {
-    "http_status_codes": [403, 429],
+    "http_status_codes": [
+      403,
+      429
+    ],
     "blocking_text_patterns": [
       "too many attempts",
       "too many requests",
@@ -61,6 +71,7 @@
     ]
   },
   "stop_on_security_challenge": true,
-  "include_password_in_report": true,
-  "password_file": "password.txt"
+  "always_on_top": false,
+  "password_file": "password.txt",
+  "include_password_in_report": false
 }

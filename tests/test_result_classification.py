@@ -11,7 +11,7 @@ from auth_audit.config import (
     ResultCategory,
 )
 from auth_audit.result_classifier import ResultClassifier, ClassificationResult, create_classifier, AuthenticationResult
-from auth_audit.security_detector import (
+from auth_audit.security import (
     SecurityChallengeDetector, 
     SecurityChallengeResult, 
     create_detector

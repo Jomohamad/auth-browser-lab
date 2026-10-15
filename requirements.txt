@@ -1,16 +1,23 @@
 # Core dependencies
 playwright>=1.40.0
 
-# For configuration and validation
+# Configuration + validation
 pydantic>=2.5.0
 pydantic-settings>=2.1.0
 
-# For CLI argument parsing
+# CLI helpers
 click>=8.1.0
 
-# For testing
+# Type hints (older Pythons)
+typing-extensions>=4.8.0
+
+# Testing
 pytest>=7.4.0
 pytest-mock>=3.12.0
 
-# For type hints
-typing-extensions>=4.8.0
+# ---------------------------------------------------------------------------
+# Optional: interactive settings TUI (`python tester.py --settings`)
+#   python -m pip install -e ".[tui]"
+# ---------------------------------------------------------------------------
+# textual>=0.80
+# rich>=13.7

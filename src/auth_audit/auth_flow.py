@@ -13,11 +13,12 @@ from urllib.parse import urlparse
 
 from playwright.sync_api import Browser, BrowserContext, Page, Response, sync_playwright
 
-from .config import AppConfig, BrowserType
+from . import browser as browser_helpers
+from .config import AppConfig
 from .password_handler import PasswordFileResult, read_password_file
-from .reporter import CSVReporter, TestReportRecord
+from .reporting import CSVReporter, TestReportRecord
 from .result_classifier import ResultClassifier, ClassificationResult, AuthenticationResult
-from .security_detector import SecurityChallengeDetector, SecurityChallengeResult
+from .security import SecurityChallengeDetector, SecurityChallengeResult
 
 
 @dataclass
@@ -119,7 +120,12 @@ class AuthTester:
             context = None
             page = None
             try:
-                context = browser.new_context()
+                context = browser.new_context(
+                    **browser_helpers.build_context_options(
+                        self.config.browser.viewport_width,
+                        self.config.browser.viewport_height,
+                    )
+                )
 
                 # Observe auth-related responses (status / challenge signals).
                 context.on("response", lambda response: self._on_response(response))
@@ -132,6 +138,7 @@ class AuthTester:
 
                 page.on("framenavigated", handle_navigation)
 
+                pacing = self.config.browser.inter_entry_delay_seconds
                 for i, password in enumerate(passwords.passwords):
                     if self._stop_requested:
                         print(
@@ -140,6 +147,10 @@ class AuthTester:
                             f"{'y' if total - i == 1 else 'ies'}."
                         )
                         break
+
+                    # Optional pacing between entries (local mock list testing).
+                    if i > 0 and pacing > 0:
+                        time.sleep(pacing)
 
                     attempt_number = i + 1
                     print(f"\n--- Entry {attempt_number}/{total} ---")
@@ -226,12 +237,11 @@ class AuthTester:
         print(border)
     
     def _launch_browser(self, playwright) -> Browser:
-        """Launch the configured browser."""
-        browser_type = getattr(playwright, self.config.browser.browser.value)
-        
-        return browser_type.launch(
+        """Launch the configured browser (delegates to browser helpers)."""
+        return browser_helpers.launch_browser(
+            playwright,
+            browser=self.config.browser.browser.value,
             headless=self.config.browser.headless,
-            args=["--disable-blink-features=AutomationControlled"] if not self.config.browser.headless else []
         )
     
     def _run_single_test(
@@ -622,64 +632,15 @@ class AuthTester:
         field_name: str,
         timeout: int
     ) -> Optional[str]:
-        """Wait for a selector with detailed diagnostics.
+        """Wait for a selector with detailed diagnostics (delegates to helpers).
         
         Returns:
             Diagnostic string if selector issue found, None if successful.
         """
-        try:
-            # First check if selector matches any elements
-            count = page.locator(selector).count()
-            if count == 0:
-                # Check if selector might be in an iframe
-                iframes = page.frames
-                for frame in iframes:
-                    try:
-                        frame_count = frame.locator(selector).count()
-                        if frame_count > 0:
-                            return f"Selector '{selector}' for {field_name} found in iframe (frame: {frame.name or frame.url}) but not in main frame"
-                    except Exception:
-                        pass
-                return f"Selector '{selector}' for {field_name} matched 0 elements"
-            elif count > 1:
-                return f"Selector '{selector}' for {field_name} matched {count} elements (ambiguous)"
-            
-            # Check visibility
-            element = page.locator(selector).first
-            if not element.is_visible():
-                return f"Selector '{selector}' for {field_name} matched 1 element but it is not visible"
-            
-            # Wait for visible state
-            element.wait_for(state="visible", timeout=timeout)
-            return None
-            
-        except Exception as e:
-            error_str = str(e)
-            if "Timeout" in error_str:
-                # Check if element exists but not visible
-                try:
-                    count = page.locator(selector).count()
-                    if count > 0:
-                        return f"Selector '{selector}' for {field_name} matched {count} element(s) but not visible within {timeout}ms"
-                    else:
-                        return f"Selector '{selector}' for {field_name} matched 0 elements (timeout after {timeout}ms)"
-                except Exception:
-                    pass
-                return f"Selector '{selector}' for {field_name} timeout after {timeout}ms: {error_str[:100]}"
-            return f"Selector '{selector}' for {field_name} error: {error_str[:100]}"
-    
-    def _extract_selector_from_error(self, error: str) -> str:
-        """Extract selector from Playwright timeout error message."""
-        import re
-        # Try to extract selector from error like: waiting for locator("input[name=\"email\"]")
-        match = re.search(r'locator\("([^"]+)"\)', error)
-        if match:
-            return f"Timeout waiting for '{match.group(1)}'"
-        match = re.search(r"locator\('([^']+)'\)", error)
-        if match:
-            return f"Timeout waiting for '{match.group(1)}'"
-        return f"Selector timeout: {error[:150]}"
-    
+        return browser_helpers.wait_for_selector_with_diagnostics(
+            page, selector, field_name, timeout
+        )
+
     def _on_response(self, response: Response):
         """Handle HTTP response for security monitoring."""
         # Only track auth-related responses
@@ -734,7 +695,6 @@ class AuthTester:
     def print_summary(self, results: List[TestRunResult]):
         """Print a summary of all test results."""
         print("\n" + "=" * 60)
-        print("AUTHENTICATION TEST SUMMARY")
         print("=" * 60)
         
         for result in results:
@@ -759,27 +719,38 @@ class AuthTester:
         print("\n" + "=" * 60)
 
 
-def run_auth_test(config: AppConfig) -> List[TestRunResult]:
-    """Main entry point for running the local authentication test sequence.
+def run_auth_test(
+    config: AppConfig,
+    override_password: Optional[str] = None,
+) -> List[TestRunResult]:
+    """Run the authentication test sequence.
 
-    Reads the entire password file and processes every non-empty entry once
-    against the configured *local* target.
+    Reads the entire password file (or uses a single provided credential) and
+    processes every entry once in file order against the configured target.
 
     Args:
         config: Application configuration.
+        override_password: Optional single credential supplied at run time
+            (e.g. from an env var / Credential Manager / prompt). When given,
+            it is used as the only candidate; it is never written to disk.
 
     Returns:
         List of test run results.
     """
-    # Validate and read the full password file before launching the browser.
-    print("Validating password file...")
-    passwords = read_password_file(config.password_file)
-    print(f"Password file valid: {passwords.count} entr"
-          f"{'y' if passwords.count == 1 else 'ies'} loaded from {passwords.source_path}")
+    if override_password is not None:
+        passwords = PasswordFileResult(
+            passwords=[override_password],
+            count=1,
+            source_path="<provided-at-runtime>",
+        )
+    else:
+        # Validate and read the full password file before launching a browser.
+        print("Validating password file...")
+        passwords = read_password_file(config.password_file)
+        print(f"Password file valid: {passwords.count} entr"
+              f"{'y' if passwords.count == 1 else 'ies'} loaded from {passwords.source_path}")
 
     tester = AuthTester(config)
     results = tester.run(passwords)
-
-    tester.print_summary(results)
 
     return results

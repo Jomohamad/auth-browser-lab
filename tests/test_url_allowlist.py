@@ -13,7 +13,7 @@ from auth_audit.config import (
     BrowserConfig,
     ReportConfig,
 )
-from auth_audit.browser_automation import AuthTester
+from auth_audit.auth_flow import AuthTester
 from auth_audit.result_classifier import AuthenticationResult
 
 
@@ -129,7 +129,7 @@ class TestCSVReportSanitization:
 
     @pytest.fixture
     def reporter(self, tmp_path):
-        from auth_audit.reporter import CSVReporter
+        from auth_audit.reporting import CSVReporter
         return CSVReporter(str(tmp_path / "reports"))
 
     def test_sanitize_password_in_summary(self, reporter):
@@ -179,7 +179,7 @@ class TestCSVReportSanitization:
         assert record.total_entries == 2
 
     def test_report_has_total_entries_column(self, reporter):
-        from auth_audit.reporter import TestReportRecord
+        from auth_audit.reporting import TestReportRecord
         path = reporter.write_record(
             TestReportRecord(
                 timestamp_utc="2026-01-01T00:00:00+00:00",

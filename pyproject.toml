@@ -23,6 +23,10 @@ dev = [
     "pytest>=7.4.0",
     "pytest-mock>=3.12.0",
 ]
+tui = [
+    "textual>=0.80",
+    "rich>=13.7",
+]
 
 [project.scripts]
 tester = "tester:main"
@@ -33,6 +37,6 @@ include = ["src*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["src"]
+pythonpath = ["src", "."]
 addopts = "-v"
 import_mode = "append"

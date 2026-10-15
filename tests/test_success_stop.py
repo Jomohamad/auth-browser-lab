@@ -17,15 +17,15 @@ from auth_audit.config import (
     ReportConfig,
     SecurityChallengeConfig,
 )
-from auth_audit.browser_automation import AuthTester
-from auth_audit.browser_automation import TestRunResult as RunResult
+from auth_audit.auth_flow import AuthTester
+from auth_audit.auth_flow import TestRunResult as RunResult
 from auth_audit.password_handler import PasswordFileResult
 from auth_audit.result_classifier import (
     ResultClassifier,
     ClassificationResult,
     AuthenticationResult,
 )
-from auth_audit.security_detector import SecurityChallengeResult
+from auth_audit.security import SecurityChallengeResult
 
 
 def make_config(report_dir, success_on_nav=False, include_pw_in_report=False):

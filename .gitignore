@@ -48,6 +48,12 @@ test-results/
 reports/*
 !reports/.gitkeep
 
+# Config backups + atomic-write temp files + dependency snapshots
+config.json.*.bak
+config.json.*.tmp
+*.tmp
+dependency-snapshot.txt
+
 # IDE
 .vscode/
 .idea/

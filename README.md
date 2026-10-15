@@ -1,32 +1,32 @@
 # Authentication Audit Tool
 
-A safe, config-driven Python + Playwright tool for **authorized authentication
-testing against websites you own or are explicitly authorized to test**. It
-processes **every non-empty password entry** in `password.txt` sequentially, in
-file order, using a **dedicated test account you control**, and never attempts
-to bypass CAPTCHA, MFA, WAF, rate limits, or account lockouts.
+A safe, **config-driven** Python + Playwright tool for **authorized
+authentication testing against software you own or are explicitly authorized to
+test**. It has an interactive settings TUI, a full CLI, environment/dependency
+diagnostics, sanitized CSV reporting, and strict safety guardrails.
 
-> ⚠️ **Authorized use only.** Only target hosts you own or have written
-> authorization to test (declared in `allowed_hosts`). Use a dedicated test
-> account — never another user's account or production credentials.
+> ⚠️ **Authorized use only.** Test only hosts you own or are authorized to test.
+> Use a **dedicated test account** — never someone else's account or real
+> production credentials. The tool never bypasses CAPTCHA/MFA/WAF/rate-limits/
+> lockouts; it **stops** on them.
 
 ---
 
-## Features
+## Safety policy (read first)
 
-| Feature | Description |
-|---------|-------------|
-| **Config-driven selectors** | Works with any username/password form |
-| **Explicit allowlist** | You declare authorized hosts via `allowed_hosts` |
-| **HTTPS enforced** | Required for all non-local hosts (HTTP only for loopback) |
-| **Process whole file** | Every non-empty entry processed once, in file order |
-| **Challenge stop** | Stops immediately on CAPTCHA/MFA/lockout/rate-limit/403/429 |
-| **No bypasses** | Never solves/bypasses challenges; no proxy/evasion tricks |
-| **No credential logging** | Passwords/tokens/cookies never logged or stored |
-| **Sanitized CSV** | Consolidated report with only safe diagnostics |
+This tool is intentionally restrictive about *where* credential testing may run:
 
-There is **no** per-run attempt-limit or execution-mode setting — those were
-intentionally removed. The whole password file is processed in order.
+| Target | What is allowed |
+|--------|-----------------|
+| **Any host you declare** in `allowed_hosts` | Full password-list processing (every candidate once, in order). |
+| **Everything else** | Refused **before** any browser interaction. |
+
+- A host must be explicitly listed in `allowed_hosts`; the target host must match.
+- **HTTPS** is required for every non-local host (HTTP only for loopback targets such as `127.0.0.1` / `localhost`).
+- Public domains such as your own site are fully supported — just add the host to `allowed_hosts` and use HTTPS.
+- **Success** requires an explicit indicator (authenticated URL path or an authenticated-only element). A bare HTTP 302/redirect is **never** success.
+- Uncertain results stay `INCONCLUSIVE` (never treated as success).
+- Never bypass CAPTCHA/MFA/WAF/rate-limits/lockouts; the tool **stops** on them.
 
 ---
 
@@ -35,227 +35,334 @@ intentionally removed. The whole password file is processed in order.
 - **Python**: 3.10+
 - **OS**: Windows 11 (PowerShell), macOS, or Linux
 - **Playwright Chromium**: installed via the Playwright CLI
+- Optional: **Textual** + **Rich** for the interactive settings TUI
 
 ---
 
-## Quick Start (Windows 11 / PowerShell)
+## Windows 11 setup (PowerShell)
 
 ```powershell
 git clone https://github.com/Jomohamad/auth-browser-lab.git
 cd F:\main\My_Projects\auth-browser-lab
+
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 
-pip install --upgrade pip
-pip install -r requirements.txt
-pip install -e .
-playwright install chromium
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+python -m pip install -e .
+
+# Interactive settings TUI (optional but recommended)
+python -m pip install -e ".[tui]"
+
+# Install the Chromium engine used by Playwright
+python -m playwright install chromium
 ```
 
-### Configure your authorized target
+`playwright` must be installed **and** the Chromium browser downloaded (the two
+are separate). `python tester.py --doctor` verifies both.
 
-Edit `config.json` (gitignored) — or generate an example:
+---
+
+## CLI reference (`python tester.py --help`)
+
+Run the full help page with:
 
 ```powershell
-python tester.py --create-example-config
+python tester.py --help
 ```
 
-Key fields:
+| Command | Purpose |
+|---------|---------|
+| `--help` | Full help page: description, all commands, examples, config locations, dependency commands, browser/TUI options, safe-execution rules, exit codes, troubleshooting. |
+| `--version` | Print the application version. |
+| `--settings` | Launch the interactive settings TUI (**never** starts a browser or an auth test). |
+| `--doctor` | Environment/configuration diagnostics (no changes). |
+| `--config PATH` | Choose the config file (default `config.json`). |
+| `--check-updates` | Report installed vs latest-compatible versions (**read-only**; installs nothing). |
+| `--update-deps` | Interactively update declared dependencies after confirmation. |
+| `--yes` | With `--update-deps`, confirm non-interactively. |
+| `--exclude-breaking` | With `--update-deps`, skip MAJOR version bumps. |
+| `--headless` | Force a headless browser for this run. |
+| `--username TEXT` | Override the test username (also via `AUTH_TEST_USERNAME`). |
+| `--password-file PATH` | Override the password file path from config. |
+| `--password TEXT` | Provide a single synthetic test password at run time (functional check). |
+| `--prompt-password` | Prompt for the single synthetic test password. |
+| `--always-on-top` / `--no-always-on-top` | Toggle Windows console always-on-top for this run. |
+| `--create-example-config` | Write `config.example.json` and exit. |
+| `--create-example-password` | Write `password.txt.example` and exit. |
+| `--verbose` | Verbose error output (tracebacks). |
 
-| Field | Meaning |
-|-------|---------|
-| `target_url` | Login page URL (must be HTTPS unless localhost) |
-| `allowed_hosts` | Hosts you are authorized to test |
-| `auth.username` | Your **dedicated test account** |
-| `auth.username_selector` | CSS selector for the username field |
-| `auth.password_selector` | CSS selector for the password field |
-| `auth.submit_selector` | CSS selector for the submit/login button |
-| `auth.success_url_patterns` | Post-login URL paths that confirm success |
-| `auth.success_selectors` | Authenticated-page selectors (optional) |
-| `auth.failure_selectors` | Error-message selectors |
-| `auth.success_on_navigation_without_failure` | Operator-defined success signal (see below) |
-| `password_file` | Candidate password list (gitignored) |
-
-**When the login error element is your only correctness signal:** set
-`auth.success_on_navigation_without_failure: true`. With this on, a submit that
-**navigates the browser off the login page** and shows **no** configured failure
-element is classified as `SUCCESS_CONFIRMED`. This is how the Delta LMS config
-works — `#errorLbl` marks a wrong password; its absence after a real navigation
-means success. It still never claims success if the failure element is present
-or the browser stays on the login page.
-
-### Provide your dedicated test credentials
+### PowerShell examples
 
 ```powershell
-python tester.py --create-example-password
-rename password.txt.example password.txt
-notepad password.txt      # one candidate password per line
+# Diagnose the environment and configuration
+python tester.py --doctor
+
+# Interactive settings editor (no browser)
+python tester.py --settings
+
+# Run against the local mock (headless), using a synthetic credential
+python tester.py --config config.json --headless --password synthetic-fixture-pw
+
+# Check for outdated dependencies (read-only)
+python tester.py --check-updates
+
+# Update dependencies with an explicit confirmation prompt
+python tester.py --update-deps
+
+# Non-interactive update that skips MAJOR bumps
+python tester.py --update-deps --yes --exclude-breaking
 ```
 
-`password.txt` is gitignored and never logged. Username can also come from the
-`AUTH_TEST_USERNAME` environment variable.
+### Configuration precedence (highest first)
 
-### Run
+1. **CLI options** (e.g. `--headless`, `--username`)
+2. **Environment variables** (`AUTH_TEST_USERNAME`, `AUTH_TEST_PASSWORD`)
+3. **Config file** values (`config.json`)
+
+### Exit codes
+
+| Code | Meaning |
+|------|---------|
+| `0` | OK (including success, or a refused/inapplicable dependency action). |
+| `1` | Configuration/usage error (bad config, denied host, invalid CLI combination). |
+| `2` | Run error (`NAVIGATION_ERROR` / `CONFIGURATION_ERROR`). |
+| `3` | Security stop (CAPTCHA/MFA/rate-limit/403/429 detected). |
+| `130` | Interrupted with Ctrl-C. |
+
+---
+
+## Interactive settings TUI (`--settings`)
+
+Launch with `python tester.py --settings`. It never starts a browser and never
+runs an authentication test.
+
+**Navigation & keys** (consistent on every page)
+
+- **Up / Down**: move the `>` selection between menu items and fields.
+- **Enter**: select / activate the highlighted item.
+- **Left / Right**: cycle choices on dropdown (enum) fields where applicable.
+- **Mouse**: click a menu item or field to select it; click the same item again
+  (or press Enter) to activate it. Buttons perform their action on click.
+- **Escape / Backspace**: return to the previous screen.
+- Unsaved changes are validated and saved atomically (with a timestamped
+  backup); exiting with unsaved changes prompts for confirmation.
+- Long pages scroll with the mouse wheel where the terminal supports it;
+  keyboard navigation always works even without mouse support.
+
+**Pages** (each uses the same plain-text header, `=` / `-` separators, `>`
+selected-item marker, shortcut hints, and a bottom action bar with
+`[Save]`, `[Reset page]`, `[Reset all]`, `[Back]`)
+
+1. **Overview** — version, active config file, Python version, dependency
+   health, Chromium status, and whether config validation passed.
+2. **Target Configuration** — `target_url`, `allowed_hosts`.
+3. **Authentication Configuration** — provider, form selectors, success /
+   failure indicators. Adapters/notes are provided for Auth.js/NextAuth,
+   Clerk, and Supabase (each has a different form/navigation shape).
+4. **Browser** — engine, headless, viewport, navigation timeout, delays, and the
+   Windows console **always-on-top** toggle.
+5. **Execution** — local-mock settings, `stop_on_security_challenge`,
+   `password_file`.
+6. **Reporting** — report directory, timestamp format, log level, retention,
+   diagnostic verbosity, and the (off‑by‑default) `include_password_in_report`.
+7. **Dependencies & Tools** — installed versions, check for compatible updates,
+   and a clearly confirmed update action.
+8. **Advanced (Security)** — challenge HTTP codes, blocking text patterns,
+   CAPTCHA/MFA selectors.
+
+(The dedicated **Test Account** page was removed; the masked password is not
+exposed as a standalone TUI page. At run time the password is still resolved
+from `--password`, `AUTH_TEST_PASSWORD`, Windows Credential Manager, or an
+interactive masked prompt — never written to `config.json`.)
+
+**Saving** validates every value, rejects invalid hosts/URLs/selectors and
+incompatible combinations, **preserves unrelated settings**, writes
+**atomically** (write-to-temp then `os.replace`), and creates a **timestamped
+backup** first. You can reset a page or the whole config to safe defaults.
+
+---
+
+## Secret storage
+
+- **Passwords/tokens are never written into the JSON configuration.**
+- At run time the test password is resolved in this order:
+  1. explicit `--password`,
+  2. environment variable `AUTH_TEST_PASSWORD`,
+  3. **Windows Credential Manager** (generic credential
+     `auth-browser-lab/test-credential`),
+  4. an interactive, **masked** prompt (`--prompt-password`).
+- In the TUI, the password field is masked and stored only in the credential
+  store — you can replace or clear it without ever showing its current value.
+- Username may live in config (it is a non-secret identifier) and can also come
+  from `AUTH_TEST_USERNAME`.
+- CSV reports contain **no** passwords, hashes, cookies, tokens, auth headers,
+  request bodies, full HTML, or full URLs with query/fragment. The optional
+  `include_password_in_report` column is **off by default**.
+
+---
+
+## Running the local mock application
+
+If you want an isolated local target for integration testing, run the bundled
+dependency-free mock server:
 
 ```powershell
-python tester.py --config config.json
+python -m mock_app --port 8765
 ```
 
-Chromium opens (headed by default) and processes each entry against your login
-page. Results are summarized in the console and written to
-`reports/auth-test-YYYY-MM-DD.csv`.
+It serves a login form at `http://127.0.0.1:8765/login` with synthetic
+fixture credentials (`fixture_user` / `synthetic-fixture-pw`) and success path
+`/app/dashboard`. Point `config.json` at `http://127.0.0.1:8765/login` with
+`allowed_hosts: ["127.0.0.1"]` to use it. This is optional — public targets
+work once allowlisted.
+---
 
-**Loop stops immediately on confirmed success.** The loop stops as soon as an
-entry yields `SUCCESS_CONFIRMED` (a configured success indicator is observed),
-so remaining entries are never processed. It also stops on a detected security
-challenge. `AUTHENTICATION_FAILED` and `INCONCLUSIVE` do **not** stop the run —
-and `INCONCLUSIVE` is never treated as success. When it stops on success you
-get a block like:
+## Browser installation & troubleshooting
 
-```text
-Authentication result: SUCCESS_CONFIRMED
-Matched test fixture: entry #N
-Matched password (terminal only): <the working candidate>
-Further test entries: NOT PROCESSED (M remaining: entries N+1..N+M)
-Stop reason: AUTHENTICATION_SUCCESS
+| Symptom | Likely cause / fix |
+|---------|--------------------|
+| `ModuleNotFoundError: auth_audit` | Activate the venv and `python -m pip install -e .`. |
+| Browser won't launch | `python -m playwright install chromium`. |
+| "Remote version check skipped (offline)" | No network; that is **not** confirmation packages are current. |
+| `--settings` says Textual missing | `python -m pip install -e ".[tui]"`. |
+| `UNAUTHORIZED_HOST_BLOCKED` | A redirect left `allowed_hosts`; credentials were **not** submitted there. |
+| `SELECTOR_NOT_FOUND` | Re-copy the selector; the console prints the exact diagnostic (0 matches / ambiguous / hidden / in iframe). |
+
+Run `python tester.py --doctor` to see Python, package, Playwright, and Chromium
+status in one place.
+
+---
+
+## Always-on-top (Windows)
+
+- Opt-in via `browser`/`always_on_top` in config, `--always-on-top`, or the
+  settings TUI.
+- Implemented with the Win32 API (`GetConsoleWindow` + `SetWindowPosW`
+  `HWND_TOPMOST`). It uses `SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE`, so it
+  **never steals keyboard focus** and **never moves/resizes** the window without
+  your approval.
+- It is a **best-effort** feature: in IDE/embedded terminals without a real
+  console HWND (or on macOS/Linux), it is skipped and a clear **warning** is
+  shown. The tool never claims the terminal is on top if the operation failed.
+
+---
+
+## Running the test suite
+
+```powershell
+python -m pytest tests -q
+
+# Opt-in Playwright ↔ local-mock integration tests (launch real Chromium):
+$env:AUTH_LAB_MOCK_FLOW = "1"
+python -m pytest tests\test_local_mock_flow.py -q
+Remove-Item Env:AUTH_LAB_MOCK_FLOW
 ```
 
-The matched password is printed **to the terminal only** (for your own
-authorized testing) and is **never** written to the CSV report or any log — the
-report redacts all candidate passwords.
+The suite covers CLI behavior, the settings schema and atomic/secret-free config
+persistence, dependency diagnostics (network/browser/pip are mocked), the
+Windows always-on-top helper (OS mocked), the safety target policy, CSV
+sanitization, and the local mock's deterministic responses. Unit tests never
+contact a live public website.
 
 ---
 
-## Already-configured example: `dulms.deltauniv.edu.eg`
-
-`config.json` ships pre-configured for the login page at
-`https://dulms.deltauniv.edu.eg/login.aspx` using selectors verified in the
-browser:
-
-```json
-"auth": {
-  "username_selector": "#txtname",
-  "password_selector": "#txtPass",
-  "submit_selector": "#Button1",
-  "failure_selectors": ["#errorLbl"]
-}
-```
-
-- `#txtname` — username field
-- `#txtPass` — password field
-- `#Button1` — login/submit button
-- `#errorLbl` — error label (shows "Please enter correct username" / invalid
-  credentials). Its presence ⇒ `AUTHENTICATION_FAILED`; absence ⇒ success is
-  only confirmed if a success indicator is also observed.
-
-### What you must still provide
-
-Only you can supply the real credentials and success signal (they are never
-committed and never guessed by the tool):
-
-1. **Username** — `auth.username` is already set to your test account in
-   `config.json` (you can also export `AUTH_TEST_USERNAME` instead).
-2. **Real password** — put your actual test password in `password.txt`
-   (one line). The file ships with the placeholder
-   `CHANGE_ME_TO_YOUR_TEST_PASSWORD`; if it is still that placeholder you will
-   get `AUTHENTICATION_FAILED` (wrong password) even with a correct username.
-3. **Success indicator** — `success_selectors` is empty and
-   `success_url_patterns` defaults to `["/default.aspx"]`. Log in manually once,
-   note the URL you land on (and/or an element that only exists when logged in,
-   e.g. a logout link), and set one of them, for example:
-   ```json
-   "success_url_patterns": ["/default.aspx"],
-   "success_selectors": ["a[href*=\"logout\"]"]
-   ```
-   `/default.aspx` is a default guess — verify it in the browser. Without a
-   matching indicator, a correct login reports `INCONCLUSIVE` (the tool never
-   infers success).
-
----
-
-## Troubleshooting / interpreting your result
-
-| What you see | Why | What to do |
-|--------------|-----|------------|
-| `AUTHENTICATION_FAILED` + `#errorLbl` ("Please enter correct username and password") | The site **rejected the credentials** — the tool read this from your page's own error label. | The script is working. Put the **correct password** in `password.txt` (and check the username). |
-| `INCONCLUSIVE` | The form submitted but **no configured success/failure indicator matched**. | Add the real post-login path to `success_url_patterns`, or an authenticated-only element to `success_selectors`. |
-| `SUCCESS_CONFIRMED` | A configured **success indicator was observed**. | Nothing — login works. |
-| `SELECTOR_NOT_FOUND` | A configured selector was missing/invisible/ambiguous/in an iframe. | Re-copy the selector in DevTools; the console prints the exact diagnostic (e.g., "matched 0 elements"). |
-| `LOGIN_PAGE_NOT_FOUND` | The login page returned HTTP 404. | Check `target_url`. |
-| `UNAUTHORIZED_HOST_BLOCKED` | A redirect went to a host not in `allowed_hosts`; credentials were **not** submitted there. | Add that host to `allowed_hosts` only if you're authorized to test it. |
-| `STOPPED_SECURITY_CHALLENGE` / `STOPPED_RATE_LIMIT` / `STOPPED_ACCESS_DENIED` | A CAPTCHA/MFA/lockout/rate-limit/403/429 signal was detected. | The run stops by design. Do not retry-loop; respect the control. |
-
-Note: a real `AUTHENTICATION_FAILED` for this site is normal until
-`password.txt` holds the correct password — it is not a code fault.
-
----
-
-## Finding selectors for any other site
-
-1. Open the login page, press **F12** → **Elements**.
-2. Right-click the field → Inspect → right-click the node → **Copy** →
-   **Copy selector**.
-3. Prefer stable attributes: `id`, `name`, `data-testid`.
-4. For the error message and any authenticated-only element, copy those
-   selectors into `failure_selectors` / `success_selectors`.
-
----
-
-## Result categories
+## Result states & CSV reports
 
 | Result | Meaning |
 |--------|---------|
-| `SUCCESS_CONFIRMED` | A configured success indicator was observed |
-| `AUTHENTICATION_FAILED` | A configured failure indicator was observed |
-| `LOGIN_PAGE_NOT_FOUND` | The login page returned HTTP 404 |
-| `SELECTOR_NOT_FOUND` | A configured selector was missing/invisible/ambiguous/in an iframe |
-| `FORM_NOT_READY` | The login form could not be found or readied |
-| `STOPPED_SECURITY_CHALLENGE` | CAPTCHA / MFA / lockout / generic challenge |
-| `STOPPED_RATE_LIMIT` | HTTP 429 or rate-limit text |
-| `STOPPED_ACCESS_DENIED` | HTTP 403 or access-denied text |
-| `NAVIGATION_ERROR` | Navigation failed |
-| `UNAUTHORIZED_HOST_BLOCKED` | Redirected to a host not in `allowed_hosts` |
-| `INCONCLUSIVE` | No configured indicator matched — manual review needed |
-| `CONFIGURATION_ERROR` | Invalid configuration |
+| `SUCCESS_CONFIRMED` | A configured success indicator was observed. |
+| `AUTHENTICATION_FAILED` | A configured failure indicator was observed. |
+| `LOGIN_PAGE_NOT_FOUND` | The login page returned HTTP 404. |
+| `SELECTOR_NOT_FOUND` | A configured selector was missing/hidden/ambiguous/in an iframe. |
+| `FORM_NOT_READY` | The login form could not be found or readied. |
+| `STOPPED_SECURITY_CHALLENGE` | CAPTCHA / MFA / lockout / generic challenge. |
+| `STOPPED_RATE_LIMIT` | HTTP 429 or rate-limit text. |
+| `STOPPED_ACCESS_DENIED` | HTTP 403 or access-denied text. |
+| `NAVIGATION_ERROR` | Navigation failed. |
+| `UNAUTHORIZED_HOST_BLOCKED` | Redirected off `allowed_hosts`; credentials not submitted. |
+| `INCONCLUSIVE` | No configured indicator matched — manual review needed. |
+| `CONFIGURATION_ERROR` | Invalid configuration. |
 
----
+On success the terminal prints a stop block such as:
 
-## CSV report
-
-One consolidated report per day: `reports/auth-test-YYYY-MM-DD.csv`, one row
-per processed entry.
-
-| Column | Description |
-|--------|-------------|
-| `timestamp_utc` | ISO 8601 timestamp |
-| `attempt_number` / `total_entries` | Index within run / total non-empty entries |
-| `result` | Result category |
-| `http_status` | Observed auth-related HTTP status |
-| `security_challenge_detected` | true/false |
-| `elapsed_time_ms` | Time for this entry |
-| `diagnostic_summary` | Sanitized diagnostic text |
-| `target_host`, `authentication_provider` | Context |
-| `login_page_status` / `auth_response_status` | Split document/API status |
-| `final_page_path` | Final URL path (no query/fragment) |
-| `page_title`, `form_detected`, `selector_diagnostic` | Diagnostics |
-
-It never contains passwords, hashes, cookies, tokens, authorization headers,
-request bodies, full page HTML, or full URLs with query strings/fragments.
-
----
-
-## Tests
-
-```powershell
-python -m pytest tests -v
+```text
+Authentication result: SUCCESS_CONFIRMED
+Matched test fixture: entry #1
+Matched password (terminal only): <the working candidate>
+Further test entries: NONE (this was the final entry)
+Stop reason: AUTHENTICATION_SUCCESS
 ```
 
-The suite covers configuration/allowlist/HTTPS validation, full-file password
-processing (order, blank lines, CRLF/LF, no over-normalization, error cases),
-result classification, security-challenge detection, redirect/origin blocking,
-CSV sanitization, and confirms no attempt-limit config remains. Unit tests use
-mocks and fixtures only — they never contact a live website. Live runs against
-your own site are performed by `tester.py`, not the test suite.
+The matched password is printed to the **terminal only** and never written to
+the CSV report or logs.
+
+### CSV report
+
+One consolidated report per day: `reports/auth-test-YYYY-MM-DD.csv`, one row per
+processed entry. Columns include `timestamp_utc`, `attempt_number`,
+`total_entries`, `result`, `http_status`, `security_challenge_detected`,
+`elapsed_time_ms`, `diagnostic_summary`, `target_host`,
+`authentication_provider`, `login_page_status`, `auth_response_status`,
+`final_page_path`, `page_title`, `form_detected`, `selector_diagnostic`, and
+(only when you opt in) `candidate_password`. It never contains secrets.
+
+---
+
+## Configuration reference
+
+Every field below is editable in the settings TUI (see also
+`config.example.json`):
+
+```jsonc
+{
+  "target_url": "http://127.0.0.1:8765/login",   // required; HTTPS for non-local
+  "allowed_hosts": ["127.0.0.1", "localhost"],   // you are authorized for these
+  "auth": {
+    "provider": "custom",                        // custom|authjs|nextauth|clerk|supabase
+    "username": "fixture_user",                  // non-secret identifier
+    "username_selector": "#username",
+    "password_selector": "#password",
+    "submit_selector": "#login-btn",
+    "success_url_patterns": ["/app/dashboard"],  // authenticated URL paths
+    "success_selectors": ["a[href*='logout']"],  // authenticated-only elements
+    "failure_selectors": ["#login-error"],       // login error elements
+    "success_on_navigation_without_failure": false
+  },
+  "browser": {
+    "browser": "chromium",                       // chromium|firefox|webkit
+    "headless": false,
+    "navigation_timeout_ms": 15000,
+    "delay_before_submit_seconds": 1,
+    "inter_entry_delay_seconds": 0,              // pacing between candidates
+    "viewport_width": 1280,
+    "viewport_height": 720
+  },
+  "report": {
+    "report_directory": "reports",
+    "timestamp_format": "%Y-%m-%dT%H:%M:%S%z",
+    "log_level": "INFO",                         // DEBUG|INFO|WARNING|ERROR
+    "retention_days": 0,                         // 0 = keep all
+    "diagnostic_verbosity": "normal"             // minimal|normal|verbose
+  },
+  "mock": {
+    "enabled": true, "host": "127.0.0.1", "port": 8765,
+    "correct_username": "fixture_user", "success_path": "/app/dashboard"
+  },
+  "security": {
+    "http_status_codes": [403, 429],
+    "blocking_text_patterns": ["rate limit", "captcha", "account locked"],
+    "captcha_selectors": [".g-recaptcha", ".h-captcha"],
+    "mfa_selectors": [".mfa-challenge", ".two-factor"]
+  },
+  "stop_on_security_challenge": true,           // always stop on challenges
+  "allow_public_functional_check": false,       // opt-in: remote single-cred check
+  "always_on_top": false,                        // Windows console (best-effort)
+  "password_file": "password.txt",               // candidate list (local mock only)
+  "include_password_in_report": false            // off => reports stay secret-free
+}
+```
 
 ---
 
@@ -263,29 +370,47 @@ your own site are performed by `tester.py`, not the test suite.
 
 ```
 auth-browser-lab/
-├── tester.py                  # CLI entry point
-├── config.json                # Authorized target config (gitignored)
+├── tester.py                  # CLI entry point (thin shim -> auth_audit.cli)
+├── config.json                # Your config (gitignored)
 ├── config.example.json        # Example configuration
-├── password.txt               # Candidate password list (gitignored)
-├── password.txt.example       # Example password file
+├── password.txt               # Candidate list (gitignored; local mock only)
+├── password.txt.example
 ├── requirements.txt
 ├── pyproject.toml
 ├── README.md
 ├── .gitignore
-├── reports/ (auth-test-YYYY-MM-DD.csv)
+├── reports/                   # auth-test-YYYY-MM-DD.csv
 ├── src/auth_audit/
-│   ├── config.py              # Config + allowlist + HTTPS enforcement
-│   ├── password_handler.py    # Full-file reading (no attempt limit)
-│   ├── security_detector.py   # Challenge detection
+│   ├── __init__.py
+│   ├── config.py              # Config model, allowlist/HTTPS, atomic save
+│   ├── schema.py              # Declarative schema of every field
+│   ├── credentials.py         # Secret resolution (env / CredMgr / prompt)
+│   ├── password_handler.py    # Full-file reading (no attempt cap)
+│   ├── security.py            # Challenge detection
 │   ├── result_classifier.py   # Result classification
-│   ├── reporter.py            # Sanitized CSV reporting
-│   └── browser_automation.py  # Playwright orchestration
+│   ├── reporting.py           # Sanitized CSV reporting
+│   ├── browser.py             # Playwright launch + selector diagnostics
+│   ├── auth_flow.py           # Orchestration + run policy
+│   ├── dependency_manager.py  # Dependency/tool diagnostics + controlled updates
+│   ├── windows_console.py     # Windows always-on-top (best-effort)
+│   ├── cli.py                 # argparse CLI + exit codes
+│   └── settings_tui.py        # Textual settings TUI
 └── tests/
+    ├── test_cli.py
     ├── test_config.py
-    ├── test_password_file.py
+    ├── test_schema.py
+    ├── test_settings_config.py
+    ├── test_settings_tui.py
+    ├── test_dependencies.py
+    ├── test_windows_console.py
+    ├── test_policy.py
     ├── test_result_classification.py
     ├── test_url_allowlist.py
-    └── test_attempt_limit_removed.py
+    ├── test_success_stop.py
+    ├── test_password_file.py
+    ├── test_attempt_limit_removed.py
+    ├── test_credentials.py
+    └── test_local_mock_flow.py
 ```
 
 ---
@@ -294,8 +419,11 @@ auth-browser-lab/
 
 - Test only hosts you own / are authorized to test (declare them in
   `allowed_hosts`).
-- Use a dedicated test account; never another user's account.
+- Use a **dedicated** test account; never another user's account.
 - The tool **stops** on challenges and **never** bypasses CAPTCHA/MFA/WAF/rate
   limits/lockouts — respect those controls.
 - Keep credentials out of source control (`config.json`, `password.txt`,
-  `.env` are gitignored).
+  `.env` are gitignored). Secrets live in env vars or Windows Credential
+  Manager, never in `config.json`.
+
+Signed by JOE.
