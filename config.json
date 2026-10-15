@@ -21,7 +21,7 @@
   "browser": {
     "browser": "chromium",
     "headless": true,
-    "navigation_timeout_ms": 1000,
+    "navigation_timeout_ms": 500,
     "delay_before_submit_seconds": 0,
     "inter_entry_delay_seconds": 0,
     "viewport_width": 1280,
