@@ -186,7 +186,7 @@ class TestConfigModels:
         assert browser.browser == BrowserType.CHROMIUM
         assert browser.headless is False
         assert browser.navigation_timeout_ms == 15000
-        assert browser.delay_before_submit_seconds == 3.0
+        assert browser.delay_before_submit_seconds == 0.0
 
     def test_security_config_defaults(self):
         from auth_audit.config import SecurityChallengeConfig

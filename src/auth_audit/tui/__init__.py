@@ -25,6 +25,7 @@ from .entries import (
     SeparatorEntry,
     StaticEntry,
 )
+from .progress import ProgressApp
 
 __all__ = [
     "SettingsApp",
@@ -35,4 +36,5 @@ __all__ = [
     "ActionEntry",
     "StaticEntry",
     "SeparatorEntry",
+    "ProgressApp",
 ]

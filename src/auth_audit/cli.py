@@ -102,6 +102,11 @@ def build_parser() -> argparse.ArgumentParser:
     # Run options
     parser.add_argument("--headless", action="store_true",
                         help="Force headless browser for this run.")
+    parser.add_argument("--concurrent-windows", type=int, default=None,
+                        help="Number of concurrent browser windows "
+                             "(overrides config; default from settings).")
+    parser.add_argument("--no-resume", action="store_true",
+                        help="Disable resume-on-stop; start from entry 1.")
     parser.add_argument("--username", help="Override the test username "
                                            "(also set via AUTH_TEST_USERNAME).")
     parser.add_argument("--password-file", "-p",
@@ -348,8 +353,9 @@ def cmd_run(args: argparse.Namespace) -> int:
     from .config import load_config, ConfigError
     from . import windows_console
     from . import credentials
-    from .auth_flow import run_auth_test
-    from .password_handler import PasswordFileError
+    from .auth_flow import run_auth_test, AuthTester
+    from .password_handler import PasswordFileError, read_password_file
+    from .tui.progress import ProgressApp
 
     # 1. Load + validate configuration.
     try:
@@ -371,6 +377,10 @@ def cmd_run(args: argparse.Namespace) -> int:
         config.auth.username = credentials.resolve_username(config.auth.username)
     if args.password_file:
         config.password_file = args.password_file
+    if args.concurrent_windows is not None:
+        config.browser.concurrent_windows = args.concurrent_windows
+    if args.no_resume:
+        config.resume_enabled = False
     if args.always_on_top is not None:
         config.always_on_top = args.always_on_top
 
@@ -381,7 +391,17 @@ def cmd_run(args: argparse.Namespace) -> int:
     elif args.prompt_password:
         override_password = credentials.resolve_password(prompt_ok=True)
 
-    # 4. Optional Windows console always-on-top (warning if it fails).
+    # 4. Read password file to get total count for the TUI.
+    try:
+        passwords_info = read_password_file(config.password_file)
+        total_entries = passwords_info.count
+    except PasswordFileError as e:
+        _err(f"Password file error: {e}")
+        return 1
+
+    num_windows = min(config.browser.concurrent_windows, total_entries)
+
+    # 5. Optional Windows console always-on-top (warning if it fails).
     if config.always_on_top:
         res = windows_console.maybe_enable(True)
         if res.enabled:
@@ -389,31 +409,65 @@ def cmd_run(args: argparse.Namespace) -> int:
         else:
             _warn(f"Always-on-top not enabled: {res.reason}")
 
-    # 5. Show a concise (secret-free) summary.
+    # 6. Show a concise (secret-free) summary.
     _print("")
     _info(f"Target host : {config.target_hostname}")
     _info(f"Provider    : {config.auth.provider.value}")
     _info(f"Password file / credential : "
           f"{'<runtime credential>' if override_password else config.password_file}")
+    _info(f"Concurrent windows : {num_windows}")
     _print("")
 
-    # 6. Run (run_auth_test processes every entry once in file order).
-    try:
-        results = run_auth_test(config, override_password=override_password)
-    except PasswordFileError as e:
-        _err(f"Password file error: {e}")
-        return 1
-    except KeyboardInterrupt:
-        _warn("Interrupted by user.")
-        return 130
-    except Exception as e:  # noqa: BLE001
-        _err(f"Test execution failed: {type(e).__name__}: {e}")
-        if args.verbose:
-            import traceback
-            traceback.print_exc()
-        return 1
+    # 7. Run under the progress TUI.
+    results_container: list = []
+    tester = AuthTester(config)
 
-    # 7. Exit code mapping.
+    def on_stop() -> None:
+        tester._stop_requested = True
+
+    def on_resume() -> None:
+        tester._stop_requested = False
+
+    def on_end() -> None:
+        tester._stop_requested = True
+
+    def progress_callback(
+        window_idx: int, completed: int, total: int,
+        result_str: str, ms: int,
+    ) -> None:
+        app.call_from_thread(
+            app.update_progress, window_idx, completed, total, result_str, ms
+        )
+
+    app = ProgressApp(total_entries, num_windows, on_stop, on_resume, on_end)
+
+    def run_test() -> None:
+        try:
+            results = run_auth_test(
+                config,
+                override_password=override_password,
+                progress_callback=progress_callback,
+                ui_mode=True,
+            )
+            results_container.extend(results)
+        except Exception as e:  # noqa: BLE001
+            app.call_from_thread(app.set_status, f"Error: {e}")
+
+    import threading
+
+    test_thread = threading.Thread(target=run_test, daemon=True)
+    test_thread.start()
+
+    try:
+        app.run()
+    except KeyboardInterrupt:
+        tester._stop_requested = True
+        tester._stop_requested = True
+    test_thread.join()
+
+    results = results_container
+
+    # 8. Exit code mapping.
     from .result_classifier import AuthenticationResult
 
     has_security_stop = any(

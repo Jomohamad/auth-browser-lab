@@ -84,6 +84,8 @@ python tester.py --help
 | `--yes` | With `--update-deps`, confirm non-interactively. |
 | `--exclude-breaking` | With `--update-deps`, skip MAJOR version bumps. |
 | `--headless` | Force a headless browser for this run. |
+| `--concurrent-windows N` | Number of concurrent browser windows (overrides config; default 1). |
+| `--no-resume` | Disable resume-on-stop; start from entry 1 even if state was saved. |
 | `--username TEXT` | Override the test username (also via `AUTH_TEST_USERNAME`). |
 | `--password-file PATH` | Override the password file path from config. |
 | `--password TEXT` | Provide a single synthetic test password at run time (functional check). |
@@ -163,7 +165,9 @@ selected-item marker, shortcut hints, and a bottom action bar with
    Clerk, and Supabase (each has a different form/navigation shape).
 4. **Browser** — engine, headless, viewport, navigation timeout, delays, and the
    Windows console **always-on-top** toggle.
-5. **Execution** — `stop_on_security_challenge`, `password_file`.
+5. **Execution** — `stop_on_security_challenge`, `password_file`, concurrent
+   windows, resume-on-stop (save last tried password on Ctrl+C, continue from it
+   next run).
 6. **Reporting** — report directory, timestamp format, log level, retention,
    diagnostic verbosity, and the (off‑by‑default) `include_password_in_report`.
 7. **Dependencies & Tools** — installed versions, check for compatible updates,
@@ -244,6 +248,99 @@ Windows always-on-top helper (OS mocked), the safety target policy, CSV
 sanitization, and the result classifier. Unit tests never contact a live
 website.
 
+## Concurrent execution & resume
+
+### Concurrent windows
+
+Run multiple browser windows in parallel to test passwords faster. Set the
+number of windows in the TUI (**Browser → Concurrent windows**, default 6 in the
+example config, maximum 20) or override at the command line:
+
+```powershell
+python tester.py --concurrent-windows 6
+```
+
+Each window keeps its own persistent page/context, so browser startup cost is
+paid once. Entries are divided round-robin across windows. After each attempt
+the page returns to the login URL (via reload / goto) to avoid
+`ERR_ABORTED` from rapid same-URL navigations.
+
+Each window shows a live progress bar in the terminal:
+
+```text
+Window 1: [████████████░░░░░░]  50.0% (5000/10000) | AUTHENTICATION_FAILED (1200ms)
+Window 2: [██████████████░░░░░]  60.0% (6000/10000) | AUTHENTICATION_FAILED (950ms)
+Window 3: [████████░░░░░░░░░░░░]  35.0% (3500/10000) | NAVIGATION_ERROR (0ms)
+```
+
+Per-entry log lines (`Waiting for username field`, `Submitting login form`, etc.)
+are suppressed — only the progress bars and stop/success blocks are printed.
+
+If you stop with **Ctrl+C**, workers finish their current test gracefully and
+browsers close cleanly — no `TargetClosedError` or connection errors on shutdown.
+
+The final CSV report includes a `window_index` column indicating which window
+processed each entry — so you can see exactly which window found the correct
+password.
+
+### Resume on stop
+
+If you stop testing with **Ctrl+C** (or a security challenge stops the run),
+the last completed entry index is saved to `.auth_resume_state.json` (enabled by
+default in **Execution → Resume on next run**). The next run automatically
+continues from the following entry. To start fresh, use `--no-resume` or disable
+the setting in the TUI.
+
+### Progress TUI
+
+When you run a test (`python tester.py`), a Textual-based progress TUI appears
+instead of plain console output. It shows per-window progress bars and live
+results:
+
+```text
+============================================================
+AUTH BROWSER LAB — Test Progress
+============================================================
+
+Testing 50000 entries across 6 window(s).
+
+Per-window progress:
+
+Window 1: [████████████░░░░░░]  50.0% (4167/8334) | AUTHENTICATION_FAILED (735ms)
+Window 2: [██████████░░░░░░░░]  40.0% (3334/8334) | AUTHENTICATION_FAILED (698ms)
+Window 3: [██████████████░░░░]  60.0% (5000/8333) | AUTHENTICATION_FAILED (716ms)
+Window 4: [███████████░░░░░░░]  55.0% (4583/8333) | AUTHENTICATION_FAILED (822ms)
+Window 5: [████████████░░░░░░]  50.0% (4167/8333) | AUTHENTICATION_FAILED (812ms)
+Window 6: [██████████░░░░░░░░]  40.0% (3333/8333) | AUTHENTICATION_FAILED (776ms)
+
+------------------------------------------------------------
+UP/DOWN: Navigate    ENTER: Select    ESC: Back    MOUSE: Click to select
+    [S] Stop   [R] Resume   [E] End
+============================================================
+```
+
+**Controls** (keyboard shortcuts or click the buttons):
+
+| Key | Action |
+|-----|--------|
+| `S` | **Stop** — finish the current attempt in each window, then stop |
+| `R` | **Resume** — continue testing after a stop |
+| `E` / `Q` | **End** — abort in-flight attempts and close the TUI |
+
+When you stop, resume state is saved (if enabled) so the next run continues
+from where you left off. When you end, the test aborts immediately.
+
+### Faster execution
+
+Delays have been minimized so each attempt runs well under 500ms of overhead
+(before network/server latency):
+
+- `delay_before_submit_seconds` default is now **0** (no artificial delay).
+- Post-submit wait reduced to 300ms.
+- Navigation timeout is configurable (default 15000ms).
+- Only `SUCCESS_CONFIRMED` results are written to the CSV report (failed
+  attempts are tracked in the terminal only).
+
 ---
 
 ## Result states & CSV reports
@@ -283,7 +380,8 @@ processed entry. Columns include `timestamp_utc`, `attempt_number`,
 `total_entries`, `result`, `http_status`, `security_challenge_detected`,
 `elapsed_time_ms`, `diagnostic_summary`, `target_host`,
 `authentication_provider`, `login_page_status`, `auth_response_status`,
-`final_page_path`, `page_title`, `form_detected`, `selector_diagnostic`, and
+`final_page_path`, `page_title`, `form_detected`, `selector_diagnostic`,
+`window_index` (which concurrent window processed the entry), and
 (only when you opt in) `candidate_password`. It never contains secrets.
 
 ---
@@ -312,8 +410,9 @@ Every field below is editable in the settings TUI (see also
     "browser": "chromium",                       // chromium|firefox|webkit
     "headless": false,
     "navigation_timeout_ms": 15000,
-    "delay_before_submit_seconds": 1,
+    "delay_before_submit_seconds": 3,
     "inter_entry_delay_seconds": 0,              // pacing between candidates
+    "concurrent_windows": 6,                     // parallel browser windows
     "viewport_width": 1280,
     "viewport_height": 720
   },
@@ -333,6 +432,8 @@ Every field below is editable in the settings TUI (see also
   "stop_on_security_challenge": true,           // always stop on challenges
   "always_on_top": false,                        // Windows console (best-effort)
   "password_file": "password.txt",               // candidate list
+  "resume_enabled": true,                        // save progress on Ctrl+C
+  "resume_state_file": ".auth_resume_state.json",// resume progress file
   "include_password_in_report": false            // off => reports stay secret-free
 }
 ```

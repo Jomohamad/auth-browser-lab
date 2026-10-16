@@ -38,6 +38,7 @@ class TestReportRecord:
     selector_diagnostic: str
     diagnostic_summary: str
     candidate_password: str = ""
+    window_index: int = 0
 
 
 class CSVReporter:
@@ -62,6 +63,8 @@ class CSVReporter:
         "page_title",
         "form_detected",
         "selector_diagnostic",
+        # Which concurrent window processed this entry (0 = sequential).
+        "window_index",
         # Opt-in plaintext candidate password (empty unless the operator
         # enables include_password_in_report for their own local report).
         "candidate_password",
@@ -109,6 +112,7 @@ class CSVReporter:
         secrets: Optional[List[str]] = None,
         candidate_password: Optional[str] = None,
         include_password_in_report: bool = False,
+        window_index: int = 0,
     ) -> TestReportRecord:
         """Create a sanitized test report record.
 
@@ -148,6 +152,7 @@ class CSVReporter:
             selector_diagnostic=self._sanitize_summary(selector_diagnostic, secrets),
             diagnostic_summary=self._sanitize_summary(diagnostic_summary, secrets),
             candidate_password=(candidate_password or "") if include_password_in_report else "",
+            window_index=window_index,
         )
 
     def _sanitize_summary(

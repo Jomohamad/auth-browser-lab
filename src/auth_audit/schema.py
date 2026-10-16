@@ -191,12 +191,33 @@ def _specs() -> List[SettingSpec]:
             help_text="Windows only; silently ignored elsewhere. Never steals "
                       "focus or moves/resizes the window without approval.",
         ),
+        SettingSpec(
+            "browser.concurrent_windows", "Concurrent windows", "browser",
+            FieldType.INT, 6, min=1, max=20,
+            description="Number of browser windows running in parallel.",
+            help_text="Higher = faster testing but more load on the target. "
+                      "Default 6. Maximum 20.",
+        ),
 
         # --- Page 6: Execution --------------------------------------------
         SettingSpec(
             "stop_on_security_challenge", "Stop on security challenge",
             "execution", FieldType.BOOL, True,
             description="Stop immediately when a challenge is detected.",
+        ),
+        SettingSpec(
+            "resume_enabled", "Resume on next run", "execution",
+            FieldType.BOOL, True,
+            description="Save last tried password so the next run continues from it.",
+            help_text="When you stop testing (Ctrl+C), the last completed entry "
+                      "is saved. The next run starts from the following entry.",
+        ),
+        SettingSpec(
+            "resume_state_file", "Resume state file", "execution",
+            FieldType.STR, ".auth_resume_state.json",
+            description="File that stores resume progress.",
+            help_text="Contains the last completed entry index, password file, "
+                      "and target URL.",
         ),
         SettingSpec(
             "password_file", "Password file", "execution", FieldType.STR,

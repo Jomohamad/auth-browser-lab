@@ -241,12 +241,18 @@ class BrowserConfig(BaseModel):
         description="Navigation timeout in milliseconds"
     )
     delay_before_submit_seconds: float = Field(
-        default=3.0,
+        default=0.0,
         description="Delay before submitting the login form"
     )
     inter_entry_delay_seconds: float = Field(
         default=0.0,
         description="Optional pacing delay between candidate entries"
+    )
+    concurrent_windows: int = Field(
+        default=1,
+        description="Number of concurrent browser windows for parallel testing",
+        ge=1,
+        le=20,
     )
     viewport_width: int = Field(
         default=1280,
@@ -306,6 +312,14 @@ class AppConfig(BaseModel):
     password_file: str = Field(
         default="password.txt",
         description="Path to password file (every non-empty line is processed)"
+    )
+    resume_enabled: bool = Field(
+        default=True,
+        description="Save progress so the next run can resume from the last tried password"
+    )
+    resume_state_file: str = Field(
+        default=".auth_resume_state.json",
+        description="File storing resume progress (last completed entry index)"
     )
     include_password_in_report: bool = Field(
         default=False,
@@ -516,6 +530,7 @@ def create_example_config(output_path: str | Path) -> None:
             "navigation_timeout_ms": 15000,
             "delay_before_submit_seconds": 1,
             "inter_entry_delay_seconds": 0,
+            "concurrent_windows": 6,
             "viewport_width": 1280,
             "viewport_height": 720
         },
@@ -562,6 +577,8 @@ def create_example_config(output_path: str | Path) -> None:
         "stop_on_security_challenge": True,
         "always_on_top": False,
         "password_file": "password.txt",
+        "resume_enabled": True,
+        "resume_state_file": ".auth_resume_state.json",
         "include_password_in_report": False
     }
 

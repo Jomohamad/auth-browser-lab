@@ -373,7 +373,7 @@ class BrowserScreen(PageScreen):
 class ExecutionScreen(PageScreen):
     PAGE_ID = "execution"
     TITLE = "Test Execution Settings"
-    SUBTITLE = "Local-mock behaviour, security-challenge policy, and password file."
+    SUBTITLE = "Concurrent windows, resume-on-stop, security-challenge policy, password file."
 
 
 class ReportingScreen(PageScreen):
