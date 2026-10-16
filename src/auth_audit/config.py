@@ -249,10 +249,10 @@ class BrowserConfig(BaseModel):
         description="Optional pacing delay between candidate entries"
     )
     concurrent_windows: int = Field(
-        default=1,
+        default=6,
         description="Number of concurrent browser windows for parallel testing",
         ge=1,
-        le=20,
+        le=100,
     )
     viewport_width: int = Field(
         default=1280,

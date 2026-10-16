@@ -5,6 +5,9 @@ from a 302, keep inconclusive as inconclusive, and never leak credentials.
 These tests use mocks only. No live authentication is performed here.
 """
 
+import threading
+import time
+
 import pytest
 from unittest.mock import Mock
 from playwright.sync_api import Page
@@ -28,7 +31,12 @@ from auth_audit.result_classifier import (
 from auth_audit.security import SecurityChallengeResult
 
 
-def make_config(report_dir, success_on_nav=False, include_pw_in_report=False):
+def make_config(
+    report_dir,
+    success_on_nav=False,
+    include_pw_in_report=False,
+    concurrent_windows=1,
+):
     return AppConfig(
         target_url="https://app.example.com/login",
         allowed_hosts=["app.example.com"],
@@ -48,6 +56,7 @@ def make_config(report_dir, success_on_nav=False, include_pw_in_report=False):
             headless=True,
             navigation_timeout_ms=15000,
             delay_before_submit_seconds=0,
+            concurrent_windows=concurrent_windows,
         ),
         report=ReportConfig(report_directory=str(report_dir)),
         security=SecurityChallengeConfig(),
@@ -189,6 +198,59 @@ def _install_fake_browser(tester):
     context.new_page.return_value = page
     tester._launch_browser = Mock(return_value=browser)
     return browser, context, page
+
+
+def test_concurrent_windows_wait_until_all_pages_are_ready(tmp_path, monkeypatch):
+    from auth_audit import auth_flow
+
+    ready_pages = []
+    ready_lock = threading.Lock()
+
+    class FakePlaywrightContext:
+        def __enter__(self):
+            return object()
+
+        def __exit__(self, *_args):
+            return False
+
+    def launch_browser(_playwright):
+        page = Mock()
+        context = Mock()
+
+        def create_page():
+            with ready_lock:
+                ready_pages.append(page)
+            return page
+
+        context.new_page.side_effect = create_page
+        browser = Mock()
+        browser.new_context.return_value = context
+        return browser
+
+    monkeypatch.setattr(auth_flow, "sync_playwright", FakePlaywrightContext)
+    tester = AuthTester(make_config(tmp_path, concurrent_windows=2))
+    tester._launch_browser = Mock(side_effect=launch_browser)
+    started_at = time.monotonic()
+
+    def run_attempt(_page, _password, _attempt_number, _total, _observed=None):
+        with ready_lock:
+            assert len(ready_pages) == 2
+        assert time.monotonic() - started_at >= 0.08
+        return make_result(AuthenticationResult.AUTHENTICATION_FAILED)
+
+    tester._run_single_test = Mock(side_effect=run_attempt)
+    results = tester.run(
+        PasswordFileResult(
+            passwords=["p1", "p2", "p3", "p4"],
+            count=4,
+            source_path="password.txt",
+        ),
+        startup_delay_seconds=0.1,
+        ui_mode=True,
+    )
+
+    assert len(results) == 4
+    assert tester._launch_browser.call_count == 2
 
 
 def test_loop_stops_after_success(tmp_path, capsys):

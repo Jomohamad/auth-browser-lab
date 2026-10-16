@@ -13,7 +13,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
-from threading import Lock
+from threading import Barrier, BrokenBarrierError, Lock
 from typing import Callable, List, Optional
 from urllib.parse import urlparse
 
@@ -156,7 +156,8 @@ class AuthTester:
     # ------------------------------------------------------------------ #
     def run(self, passwords: PasswordFileResult, resume_from: int = -1,
             progress_callback: Optional[ProgressCallback] = None,
-            ui_mode: bool = False) -> List[TestRunResult]:
+            ui_mode: bool = False,
+            startup_delay_seconds: float = 0) -> List[TestRunResult]:
         """Run authentication tests with concurrent windows and resume.
 
         When ``concurrent_windows`` is 1, entries are processed
@@ -176,6 +177,8 @@ class AuthTester:
             progress_callback: Optional callback called after each entry:
                 (window_idx, completed, total, result_str, ms).
             ui_mode: When True, runs under a TUI (suppresses console prints).
+            startup_delay_seconds: Wait after all browser pages are ready and
+                before starting navigation / attempts.
 
         Returns:
             List of test run results (one per processed entry).
@@ -309,6 +312,8 @@ class AuthTester:
                 )
                 page = context.new_page()
                 try:
+                    if startup_delay_seconds > 0:
+                        time.sleep(startup_delay_seconds)
                     for i, (pwd_idx, pwd) in enumerate(
                             zip(remaining_indices, remaining_passwords)
                     ):
@@ -400,11 +405,29 @@ class AuthTester:
         # persistent browser windows via a thread pool.
         # ------------------------------------------------------------------
         else:
-            num_windows = min(num_windows, 20)
+            num_windows = min(num_windows, 100)
             results_map: dict = {}
             stop_flag = {"stopped": False}
             results_lock = Lock()
             winning_window = {"idx": None}
+            startup_barrier = Barrier(num_windows)
+
+            def close_window(page, context, browser) -> None:
+                if page is not None:
+                    try:
+                        page.close()
+                    except Exception:
+                        pass
+                if context is not None:
+                    try:
+                        context.close()
+                    except Exception:
+                        pass
+                if browser is not None:
+                    try:
+                        browser.close()
+                    except Exception:
+                        pass
 
             def worker(window_idx: int) -> None:
                 """Each worker owns its own Playwright browser/page (thread-safe).
@@ -415,14 +438,31 @@ class AuthTester:
                   * Windows run in parallel via ThreadPoolExecutor.
                 """
                 with sync_playwright() as p:
-                    browser = self._launch_browser(p)
-                    context = browser.new_context(
-                        **browser_helpers.build_context_options(
-                            self.config.browser.viewport_width,
-                            self.config.browser.viewport_height,
+                    browser = None
+                    context = None
+                    page = None
+                    try:
+                        browser = self._launch_browser(p)
+                        context = browser.new_context(
+                            **browser_helpers.build_context_options(
+                                self.config.browser.viewport_width,
+                                self.config.browser.viewport_height,
+                            )
                         )
-                    )
-                    page = context.new_page()
+                        page = context.new_page()
+                    except BaseException:
+                        startup_barrier.abort()
+                        close_window(page, context, browser)
+                        raise
+
+                    try:
+                        startup_barrier.wait(timeout=60)
+                    except BrokenBarrierError:
+                        close_window(page, context, browser)
+                        return
+                    if startup_delay_seconds > 0:
+                        time.sleep(startup_delay_seconds)
+
                     observed = {"http_status": None, "challenge": None}
                     # Per-window set: never try the same password twice in one window.
                     tried_passwords: set = set()
@@ -519,18 +559,7 @@ class AuthTester:
                             page.remove_listener("response", on_response)
                         except Exception:
                             pass
-                        try:
-                            page.close()
-                        except Exception:
-                            pass
-                        try:
-                            context.close()
-                        except Exception:
-                            pass
-                        try:
-                            browser.close()
-                        except Exception:
-                            pass
+                        close_window(page, context, browser)
 
             with ThreadPoolExecutor(max_workers=num_windows) as executor:
                 futures = [

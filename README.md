@@ -254,7 +254,7 @@ website.
 
 Run multiple browser windows in parallel to test passwords faster. Set the
 number of windows in the TUI (**Browser → Concurrent windows**, default 6 in the
-example config, maximum 20) or override at the command line:
+example config, maximum 100) or override at the command line:
 
 ```powershell
 python tester.py --concurrent-windows 6
@@ -295,7 +295,9 @@ the setting in the TUI.
 
 When you run a test (`python tester.py`), a Textual-based progress TUI appears
 instead of plain console output. It shows per-window progress bars, live
-results, and an estimated remaining time based on the observed average rate:
+results, and an estimated remaining time based on the observed average rate.
+All browser windows are created first; the run then waits five seconds before
+starting page navigation so the windows can finish initializing.
 
 ```text
 ============================================================

@@ -193,10 +193,10 @@ def _specs() -> List[SettingSpec]:
         ),
         SettingSpec(
             "browser.concurrent_windows", "Concurrent windows", "browser",
-            FieldType.INT, 6, min=1, max=20,
+            FieldType.INT, 6, min=1, max=100,
             description="Number of browser windows running in parallel.",
             help_text="Higher = faster testing but more load on the target. "
-                      "Default 6. Maximum 20.",
+                      "Default 6. Maximum 100.",
         ),
 
         # --- Page 6: Execution --------------------------------------------

@@ -410,7 +410,7 @@ def cmd_run(args: argparse.Namespace) -> int:
             return 1
     total_entries = passwords_info.count
 
-    num_windows = min(config.browser.concurrent_windows, total_entries, 20)
+    num_windows = min(config.browser.concurrent_windows, total_entries, 100)
 
     # 5. Optional Windows console always-on-top (warning if it fails).
     if config.always_on_top:
@@ -445,13 +445,19 @@ def cmd_run(args: argparse.Namespace) -> int:
         result_str: str, ms: int,
     ) -> None:
         app.update_progress(window_idx, completed, total, result_str, ms)
+        if result_str != "starting…":
+            app.set_status("Browser tests are running.")
 
     def run_test() -> None:
         try:
+            app.set_status(
+                "Loading browser windows; waiting 5 seconds before navigation…"
+            )
             results = tester.run(
                 passwords_info,
                 progress_callback=progress_callback,
                 ui_mode=True,
+                startup_delay_seconds=5,
             )
             results_container.extend(results)
             if app.is_running:

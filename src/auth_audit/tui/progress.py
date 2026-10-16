@@ -2,8 +2,9 @@
 """Runtime progress Terminal User Interface (Textual).
 
 Styled like the settings TUI: plain text, ``=`` / ``-`` separators,
-no decorative frames. Shows per-window progress bars, an estimated time
-remaining, a count-only final summary, and a Stop control.
+no decorative frames. Shows per-window progress bars in a grid that fills
+the terminal width, plus a Stop control. No scrolling — all windows are
+visible at once.
 
 Keyboard shortcuts
 ------------------
@@ -14,39 +15,32 @@ from __future__ import annotations
 
 import threading
 import time
-from collections import Counter
-from typing import Callable, Dict, Optional, Sequence
+from typing import Callable, Dict, List, Optional
 
 from textual import on
 from textual.app import App
-from textual.containers import Horizontal, VerticalScroll
+from textual.containers import Vertical, VerticalScroll
+from textual.reactive import reactive
 from textual.widgets import Button, Static
 
-from .base import BaseScreen
-from .entries import SEP_MAJOR, SEP_MINOR, StaticEntry, separator
+from .base import BaseScreen, APP_TITLE, KEY_HINTS, SEP_MAJOR, SEP_MINOR, separator
 
 
 class ProgressScreen(BaseScreen):
-    """Single-screen progress TUI styled like the settings pages."""
+    """Single-screen progress TUI styled like the settings pages.
 
-    CSS = """
-    #body { height: 1fr; }
-    #progress-list { height: 1fr; }
-    #action-bar { height: auto; align: center middle; }
-    #action-bar Button {
-        min-width: 0;
-        width: auto;
-        height: 1;
-        margin: 0 1;
-        padding: 0;
-        border: none;
-        background: transparent;
-        color: $text;
-    }
-    #action-bar Button:hover, #action-bar Button:focus {
-        text-style: bold;
-        background: transparent;
-    }
+    Layout (fixed height, no scrolling):
+
+        ============================================================
+        AUTH BROWSER LAB — Test Progress
+        Testing N entries across M window(s).
+        Per-window progress:
+        Window 01: [████░░░░░░░░░░░░]  25.0% (100/400) | AUTHENTICATION_FAILED (500ms)
+        Window 02: [████████░░░░░░░░]  50.0% (200/400) | AUTHENTICATION_FAILED (600ms)
+        ... (more windows flow into columns based on terminal width)
+        ============================================================
+                                                          [S] Stop
+        ============================================================
     """
 
     def __init__(
@@ -73,6 +67,9 @@ class ProgressScreen(BaseScreen):
                 "last_ms": 0,
             }
 
+        # Direct widget references (set during compose).
+        self._window_widgets: Dict[int, Static] = {}
+
         self._stopped: bool = False
         self._lock = threading.Lock()
         self._summary_text = "Waiting for the run to finish."
@@ -93,31 +90,62 @@ class ProgressScreen(BaseScreen):
 
     def _redraw_chrome(self) -> None:
         super()._redraw_chrome()
-        try:
-            self.query_one("#actions-separator", Static).update(
-                separator(SEP_MINOR, self._sep_width)
-            )
-        except Exception:  # noqa: BLE001 - widget may not be mounted yet
-            pass
 
     # -- body ---------------------------------------------------------------
     def compose(self):
         yield Static(self._header_text(), id="header")
         yield Static(self._subtitle_text(), id="subtitle")
-        yield Static("", id="status")
-        with VerticalScroll(id="body"):
-            yield Static("Per-window progress:", id="progress-intro")
-            with VerticalScroll(id="progress-list"):
-                for w in range(self.num_windows):
-                    yield StaticEntry(
-                        f"progress-window-{w}", self._render_window(w)
-                    )
-            yield Static("Estimated remaining: Calculating…", id="eta")
-            yield Static("Final report:\n" + self._summary_text, id="summary")
+        yield Static("Per-window progress:", id="progress-intro")
+        yield Static("", id="progress-grid")
+        yield Static("Estimated remaining: Calculating…", id="eta")
+        yield Static("Final report:\n" + self._summary_text, id="summary")
         yield Static(separator(SEP_MINOR, self._sep_width), id="actions-separator")
-        with Horizontal(id="action-bar"):
-            yield Button("[S] Stop", id="stop")
+        with Vertical(id="action-bar"):
+            yield Button("[S] Stop", id="stop", variant="error")
         yield Static(separator(SEP_MAJOR, self._sep_width), id="footer")
+
+    def on_mount(self) -> None:
+        super().on_mount()
+        self._build_grid()
+
+    def on_resize(self) -> None:
+        super().on_resize()
+        self._build_grid()
+
+    def _build_grid(self) -> None:
+        """Rebuild the progress grid as rows × columns based on terminal width.
+
+        Each cell is one Static widget. Columns wrap so that as many
+        windows fit side-by-side as the terminal allows.
+        """
+        # Determine columns: each progress line is ~62 chars + gutter.
+        columns = max(1, min(self.num_windows, self.size.width // 66))
+        rows = (self.num_windows + columns - 1) // columns
+
+        lines: List[str] = []
+        for r in range(rows):
+            row_cells: List[str] = []
+            for c in range(columns):
+                w = r * columns + c
+                if w >= self.num_windows:
+                    row_cells.append("")
+                else:
+                    row_cells.append(self._render_window(w))
+            lines.append("  ".join(row_cells).rstrip())
+
+        grid_text = "\n".join(lines)
+        try:
+            widget = self.query_one("#progress-grid", Static)
+            widget.update(grid_text)
+        except Exception:  # noqa: BLE001 - widget may not be mounted yet
+            pass
+
+        # Store direct references for incremental updates.
+        self._window_widgets = {}
+        for w in range(self.num_windows):
+            r = w // columns
+            c = w % columns
+            self._window_widgets[w] = (r, c)
 
     # -- rendering ----------------------------------------------------------
     @staticmethod
@@ -131,28 +159,23 @@ class ProgressScreen(BaseScreen):
         pct = (prog["completed"] / prog["total"] * 100) if prog["total"] > 0 else 0
         bar = self._progress_bar(prog["completed"], prog["total"])
         return (
-            f"Window {window_idx + 1}: [{bar}] "
+            f"Window {window_idx + 1:02d}: [{bar}] "
             f"{pct:5.1f}% ({prog['completed']}/{prog['total']}) "
             f"| {prog['last_result']} ({prog['last_ms']}ms)"
         )
 
     def _refresh_display(self) -> None:
-        """Redraw all window progress lines."""
-        for w in range(self.num_windows):
-            try:
-                widget = self.query_one(f"#entry-progress-window-{w}", StaticEntry)
-                widget.set_text(self._render_window(w))
-            except Exception:  # noqa: BLE001 - widget may not be mounted yet
-                return
+        """Rebuild the whole grid so all windows update together."""
+        self._build_grid()
         self._refresh_eta()
 
     def _refresh_eta(self) -> None:
         with self._lock:
             completed = sum(
-                progress["completed"] for progress in self._window_progress.values()
+                p["completed"] for p in self._window_progress.values()
             )
             planned = sum(
-                progress["total"] for progress in self._window_progress.values()
+                p["total"] for p in self._window_progress.values()
             )
         if completed <= 0:
             estimate = "Calculating…"
@@ -170,28 +193,29 @@ class ProgressScreen(BaseScreen):
         except Exception:  # noqa: BLE001 - widget may not be mounted yet
             pass
 
-    def set_results(self, results: Sequence[object]) -> None:
+    def set_results(self, results) -> None:
         """Display a sanitized count-only final summary."""
+        from collections import Counter
+
         counts = Counter(
             result.classification.result.value for result in results
         )
         lines = [f"Processed: {len(results)} / {self.total_entries}"]
-        lines.extend(f"{name}: {count}" for name, count in sorted(counts.items()))
+        lines.extend(
+            f"{name}: {count}" for name, count in sorted(counts.items())
+        )
         self._summary_text = "\n".join(lines) if counts else "No results were produced."
         try:
             self.query_one("#summary", Static).update(
                 "Final report:\n" + self._summary_text
             )
-        except Exception:  # noqa: BLE001 - widget may not be mounted yet
+        except Exception:  # noqa: BLE001
             pass
 
     def set_status(self, message: str) -> None:
         """Show a status message."""
         try:
-            from textual.widgets import Static
-
-            widget = self.query_one("#status", Static)
-            widget.update(message)
+            self.query_one("#status", Static).update(message)
         except Exception:  # noqa: BLE001
             pass
 
@@ -288,7 +312,7 @@ class ProgressApp(App):
         if self.screen_instance is not None and self.is_running:
             self.call_from_thread(self.screen_instance.set_status, message)
 
-    def set_results(self, results: Sequence[object]) -> None:
+    def set_results(self, results) -> None:
         """Forward the final result summary to the mounted screen."""
         if self.screen_instance is not None and self.is_running:
             self.call_from_thread(self.screen_instance.set_results, results)

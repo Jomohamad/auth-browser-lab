@@ -26,7 +26,7 @@
     "inter_entry_delay_seconds": 0,
     "viewport_width": 1280,
     "viewport_height": 720,
-    "concurrent_windows": 20
+    "concurrent_windows": 30
   },
   "report": {
     "report_directory": "reports",
@@ -75,6 +75,6 @@
   "always_on_top": false,
   "password_file": "password.txt",
   "include_password_in_report": true,
-  "resume_enabled": false,
+  "resume_enabled": true,
   "resume_state_file": ".auth_resume_state.json"
 }

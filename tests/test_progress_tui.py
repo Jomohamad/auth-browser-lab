@@ -6,7 +6,6 @@ import pytest
 
 pytest.importorskip("textual")
 
-from auth_audit.tui.entries import StaticEntry
 from auth_audit.tui.progress import ProgressApp
 from textual.widgets import Button, Static
 
@@ -23,10 +22,9 @@ def test_progress_screen_renders_and_updates_from_worker_thread():
         await pilot.pause()
         screen = app.screen_instance
         assert screen is not None
-        first = screen.query_one("#entry-progress-window-0", StaticEntry)
-        second = screen.query_one("#entry-progress-window-1", StaticEntry)
-        assert "(0/2)" in first._text
-        assert "(0/1)" in second._text
+        grid = screen.query_one("#progress-grid", Static).render().plain
+        assert "(0/2)" in grid
+        assert "(0/1)" in grid
         footer = screen.query_one("#footer", Static).render().plain
         assert footer.strip() == "=" * 60
         assert "UP/DOWN" not in footer
@@ -35,8 +33,9 @@ def test_progress_screen_renders_and_updates_from_worker_thread():
             app.update_progress, 1, 1, 1, "INCONCLUSIVE", 42
         )
         await pilot.pause()
-        assert "100.0% (1/1)" in second._text
-        assert "INCONCLUSIVE (42ms)" in second._text
+        grid = screen.query_one("#progress-grid", Static).render().plain
+        assert "100.0% (1/1)" in grid
+        assert "INCONCLUSIVE (42ms)" in grid
         eta = screen.query_one("#eta", Static).render().plain
         assert "Estimated remaining:" in eta
         assert "Calculating" not in eta
@@ -82,9 +81,9 @@ def test_progress_values_are_bounded_and_unknown_windows_are_ignored():
         assert screen is not None
         screen.update_progress(0, 8, 2, "DONE", 10)
         screen.update_progress(4, 1, 1, "INVALID", 1)
-        line = screen.query_one("#entry-progress-window-0", StaticEntry)._text
-        assert "100.0% (2/2)" in line
-        assert "DONE (10ms)" in line
+        grid = screen.query_one("#progress-grid", Static).render().plain
+        assert "100.0% (2/2)" in grid
+        assert "DONE (10ms)" in grid
 
     asyncio.run(_run(app, scenario))
 
@@ -94,7 +93,7 @@ def test_on_ready_runs_after_progress_screen_is_mounted():
     app = None
 
     def on_ready():
-        ready.append(app.screen_instance.query_one("#entry-progress-window-0"))
+        ready.append(app.screen_instance)
 
     app = ProgressApp(1, 1, lambda: None, on_ready)
 
