@@ -294,8 +294,8 @@ the setting in the TUI.
 ### Progress TUI
 
 When you run a test (`python tester.py`), a Textual-based progress TUI appears
-instead of plain console output. It shows per-window progress bars and live
-results:
+instead of plain console output. It shows per-window progress bars, live
+results, and an estimated remaining time based on the observed average rate:
 
 ```text
 ============================================================
@@ -312,23 +312,27 @@ Window 3: [██████████████░░░░]  60.0% (5000/
 Window 4: [███████████░░░░░░░]  55.0% (4583/8333) | AUTHENTICATION_FAILED (822ms)
 Window 5: [████████████░░░░░░]  50.0% (4167/8333) | AUTHENTICATION_FAILED (812ms)
 Window 6: [██████████░░░░░░░░]  40.0% (3333/8333) | AUTHENTICATION_FAILED (776ms)
+Estimated remaining: 01:24:36
 
 ------------------------------------------------------------
-UP/DOWN: Navigate    ENTER: Select    ESC: Back    MOUSE: Click to select
-    [S] Stop   [R] Resume   [E] End
+    [S] Stop
 ============================================================
 ```
 
-**Controls** (keyboard shortcuts or click the buttons):
+The estimate starts as `Calculating…` until the first attempt completes. It is
+an approximate projection from the current run's observed throughput.
+
+**Controls** (keyboard shortcut or click the button):
 
 | Key | Action |
 |-----|--------|
 | `S` | **Stop** — finish the current attempt in each window, then stop |
-| `R` | **Resume** — continue testing after a stop |
-| `E` / `Q` | **End** — abort in-flight attempts and close the TUI |
+| `Ctrl+C` | Request a graceful stop and close the TUI |
 
 When you stop, resume state is saved (if enabled) so the next run continues
-from where you left off. When you end, the test aborts immediately.
+from where you left off. The final TUI summary shows processed counts by
+result classification; the CSV remains sanitized and records confirmed
+successes only.
 
 ### Faster execution
 

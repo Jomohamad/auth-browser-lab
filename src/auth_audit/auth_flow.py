@@ -278,13 +278,20 @@ class AuthTester:
                 "last_ms": 0,
             }
 
+        if progress_callback:
+            for w, prog in window_progress.items():
+                progress_callback(
+                    w, 0, prog["total"], prog["last_result"], prog["last_ms"]
+                )
+
         # Print initial progress bars (one line per window)
-        for w in range(num_windows):
-            prog = window_progress[w]
-            print(_render_window(
-                w, 0, prog["total"], prog["last_result"], prog["last_ms"]
-            ))
-        print()  # space below the initial bars
+        if not ui_mode:
+            for w in range(num_windows):
+                prog = window_progress[w]
+                print(_render_window(
+                    w, 0, prog["total"], prog["last_result"], prog["last_ms"]
+                ))
+            print()  # space below the initial bars
 
         # ------------------------------------------------------------------
         # Sequential path (concurrent_windows == 1): single page, one entry
@@ -306,12 +313,13 @@ class AuthTester:
                             zip(remaining_indices, remaining_passwords)
                     ):
                         if self._stop_requested:
-                            print(
-                                f"\n[STOP] Safety stop in effect. "
-                                f"Skipping remaining "
-                                f"{total - (start_index + i)} entr"
-                                f"{'y' if total - (start_index + i) == 1 else 'ies'}."
-                            )
+                            if not ui_mode:
+                                print(
+                                    f"\n[STOP] Safety stop in effect. "
+                                    f"Skipping remaining "
+                                    f"{total - (start_index + i)} entr"
+                                    f"{'y' if total - (start_index + i) == 1 else 'ies'}."
+                                )
                             break
 
                         attempt_number = pwd_idx + 1
@@ -334,12 +342,12 @@ class AuthTester:
                         prog["last_result"] = state.value
                         prog["last_ms"] = result.elapsed_time_ms
                         with progress_lock:
-                            if progress_callback and not ui_mode:
+                            if progress_callback:
                                 progress_callback(
                                     0, prog["completed"], prog["total"],
                                     prog["last_result"], prog["last_ms"]
                                 )
-                            else:
+                            elif not ui_mode:
                                 _render_all_windows()
 
                         if state == AuthenticationResult.SUCCESS_CONFIRMED:
@@ -377,14 +385,15 @@ class AuthTester:
 
             # Final progress for sequential mode
             with progress_lock:
-                if progress_callback and not ui_mode:
+                if progress_callback:
                     progress_callback(
                         0, prog["completed"], prog["total"],
                         prog["last_result"], prog["last_ms"]
                     )
-                else:
+                elif not ui_mode:
                     _render_all_windows()
-            print()
+            if not ui_mode:
+                print()
 
         # ------------------------------------------------------------------
         # Concurrent path (concurrent_windows > 1): round-robin across
@@ -471,13 +480,13 @@ class AuthTester:
                             prog["last_result"] = state.value
                             prog["last_ms"] = result.elapsed_time_ms
                             with progress_lock:
-                                if progress_callback and not ui_mode:
+                                if progress_callback:
                                     progress_callback(
                                         window_idx, prog["completed"],
                                         prog["total"], prog["last_result"],
                                         prog["last_ms"]
                                     )
-                                else:
+                                elif not ui_mode:
                                     _render_all_windows()
 
                             if state == AuthenticationResult.SUCCESS_CONFIRMED:
@@ -534,18 +543,20 @@ class AuthTester:
                         pass  # Suppress errors during shutdown
 
             # Print final progress bars (one line per window)
-            print()
+            if not ui_mode:
+                print()
             with progress_lock:
-                if progress_callback and not ui_mode:
+                if progress_callback:
                     for w in range(num_windows):
                         prog = window_progress[w]
                         progress_callback(
                             w, prog["completed"], prog["total"],
                             prog["last_result"], prog["last_ms"]
                         )
-                else:
+                elif not ui_mode:
                     _render_all_windows()
-            print()
+            if not ui_mode:
+                print()
 
             for i in range(start_index, total):
                 if i in results_map:
@@ -554,7 +565,10 @@ class AuthTester:
         # Write report: ONLY confirmed successes (secret-free by default).
         for result in results:
             if result.classification.result == AuthenticationResult.SUCCESS_CONFIRMED:
-                self._write_report(result, passwords, result.password_index + 1)
+                self._write_report(
+                    result, passwords, result.password_index + 1,
+                    quiet=ui_mode,
+                )
 
         # Clear resume state if we ran to completion or found success.
         if (not self._stop_requested
@@ -1020,6 +1034,8 @@ class AuthTester:
         result: TestRunResult,
         passwords: PasswordFileResult,
         attempt_number: int,
+        *,
+        quiet: bool = False,
     ):
         """Write test result to CSV report (only called for successes)."""
         record = self.reporter.create_record(
@@ -1051,11 +1067,12 @@ class AuthTester:
         )
 
         report_path = self.reporter.write_record(record)
-        print(
-            f"[Window {result.window_index + 1} "
-            f"Entry {attempt_number}/{passwords.count}] "
-            f"Report written to: {report_path}"
-        )
+        if not quiet:
+            print(
+                f"[Window {result.window_index + 1} "
+                f"Entry {attempt_number}/{passwords.count}] "
+                f"Report written to: {report_path}"
+            )
 
     def print_summary(self, results: List[TestRunResult]):
         """Print a summary of all test results."""

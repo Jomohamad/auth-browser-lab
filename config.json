@@ -20,13 +20,13 @@
   },
   "browser": {
     "browser": "chromium",
-    "headless": false,
-    "navigation_timeout_ms": 1000,
+    "headless": true,
+    "navigation_timeout_ms": 3000,
     "delay_before_submit_seconds": 0,
     "inter_entry_delay_seconds": 0,
     "viewport_width": 1280,
     "viewport_height": 720,
-    "concurrent_windows": 6
+    "concurrent_windows": 20
   },
   "report": {
     "report_directory": "reports",
