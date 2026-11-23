@@ -1,0 +1,84 @@
+{
+  "target_url": "http://localhost:3000/login",
+  "allowed_hosts": [
+    "localhost",
+    "127.0.0.1"
+  ],
+  "auth": {
+    "provider": "custom",
+    "username": "LOCAL_TEST_USER",
+    "username_selector": "input[name=\"email\"]",
+    "password_selector": "input[name=\"password\"]",
+    "submit_selector": "button[type=\"submit\"]",
+    "success_url_patterns": [
+      "/dashboard"
+    ],
+    "success_selectors": [
+      "[data-testid=\"user-menu\"]"
+    ],
+    "failure_selectors": [
+      "[data-testid=\"login-error\"]",
+      ".error-message"
+    ],
+    "success_on_navigation_without_failure": false
+  },
+  "browser": {
+    "browser": "chromium",
+    "headless": false,
+    "navigation_timeout_ms": 15000,
+    "delay_before_submit_seconds": 1,
+    "inter_entry_delay_seconds": 0,
+    "viewport_width": 1280,
+    "viewport_height": 720,
+    "concurrent_windows": 1
+  },
+  "report": {
+    "report_directory": "reports",
+    "timestamp_format": "%Y-%m-%dT%H:%M:%S%z",
+    "log_level": "INFO",
+    "retention_days": 0,
+    "diagnostic_verbosity": "normal"
+  },
+  "security": {
+    "http_status_codes": [
+      403,
+      429
+    ],
+    "blocking_text_patterns": [
+      "too many attempts",
+      "too many requests",
+      "rate limit",
+      "captcha",
+      "temporarily blocked",
+      "try again later",
+      "account locked",
+      "access denied",
+      "blocked",
+      "suspicious activity",
+      "verify you are human"
+    ],
+    "captcha_selectors": [
+      "[data-testid*='captcha']",
+      "[id*='captcha']",
+      "[class*='captcha']",
+      "iframe[src*='recaptcha']",
+      "iframe[src*='hcaptcha']",
+      ".g-recaptcha",
+      "#h-captcha"
+    ],
+    "mfa_selectors": [
+      "[data-testid*='mfa']",
+      "[data-testid*='2fa']",
+      "[id*='mfa']",
+      "[id*='2fa']",
+      ".mfa-challenge",
+      ".two-factor"
+    ]
+  },
+  "stop_on_security_challenge": true,
+  "always_on_top": false,
+  "password_file": "password.txt",
+  "include_password_in_report": false,
+  "resume_enabled": false,
+  "resume_state_file": ".auth_resume_state.json"
+}

@@ -1,0 +1,72 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Password files (never commit real passwords)
+password.txt
+passwords.txt
+*.password
+*.pwd
+*.secret
+*.key
+
+# Playwright
+playwright-report/
+test-results/
+.traces/
+
+# Reports (except .gitkeep)
+reports/*
+!reports/.gitkeep
+
+# Config backups + atomic-write temp files + dependency snapshots
+config.json.*.bak
+config.json.*.tmp
+*.tmp
+dependency-snapshot.txt
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+# Local resume state and machine-specific configuration
+.auth_resume_state.json
+.auth_resume_state*.json
